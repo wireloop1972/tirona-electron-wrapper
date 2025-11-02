@@ -1,0 +1,133 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Tirona</title>
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+
+    body {
+      width: 100vw;
+      height: 100vh;
+      background-color: #000;
+      overflow: hidden;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    }
+
+    #video-container {
+      width: 100%;
+      height: 100%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      position: relative;
+    }
+
+    video {
+      width: 100vw;
+      height: 100vh;
+      object-fit: contain;
+    }
+
+    #skip-button {
+      position: absolute;
+      bottom: 40px;
+      right: 40px;
+      color: white;
+      font-size: 16px;
+      cursor: pointer;
+      padding: 10px 20px;
+      background-color: rgba(0, 0, 0, 0.3);
+      border-radius: 4px;
+      user-select: none;
+      opacity: 0;
+      animation: fadeIn 0.5s ease-in 2s forwards;
+      transition: background-color 0.2s ease;
+    }
+
+    #skip-button:hover {
+      background-color: rgba(0, 0, 0, 0.6);
+    }
+
+    @keyframes fadeIn {
+      from {
+        opacity: 0;
+      }
+      to {
+        opacity: 0.8;
+      }
+    }
+
+    #error-message {
+      color: white;
+      font-size: 18px;
+      text-align: center;
+      display: none;
+    }
+  </style>
+</head>
+<body>
+  <div id="video-container">
+    <video id="splash-video" autoplay>
+      <source src="../assets/TironaFading.mp4" type="video/mp4">
+      Your browser does not support the video tag.
+    </video>
+    <div id="skip-button">Skip</div>
+    <div id="error-message">Loading application...</div>
+  </div>
+
+  <script>
+    const video = document.getElementById('splash-video');
+    const skipButton = document.getElementById('skip-button');
+    const errorMessage = document.getElementById('error-message');
+
+    // Function to finish splash screen
+    const finishSplash = () => {
+      // Send message to main process via window.electron API
+      if (window.electron && window.electron.splashFinished) {
+        window.electron.splashFinished();
+      }
+    };
+
+    // Handle video end
+    video.addEventListener('ended', () => {
+      finishSplash();
+    });
+
+    // Handle video error (file not found)
+    video.addEventListener('error', (e) => {
+      console.error('Video failed to load:', e);
+      errorMessage.style.display = 'block';
+      // Skip to app after 1 second if video fails
+      setTimeout(finishSplash, 1000);
+    });
+
+    // Handle skip button click
+    skipButton.addEventListener('click', () => {
+      finishSplash();
+    });
+
+    // Handle ESC key press
+    document.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape') {
+        finishSplash();
+      }
+    });
+
+    // Prevent context menu
+    document.addEventListener('contextmenu', (e) => {
+      e.preventDefault();
+    });
+  </script>
+</body>
+</html>
+
+

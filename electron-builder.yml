@@ -1,0 +1,71 @@
+appId: com.tirona.electronwrapper
+productName: Tirona
+copyright: Copyright © 2025
+
+directories:
+  output: release
+  buildResources: assets
+
+files:
+  - dist/**/*
+  - config.json
+  - package.json
+  - src/splash.html
+  - assets/**/*
+
+# Exclude unnecessary files from the build
+extraFiles:
+  - config.json
+
+# Windows configuration
+win:
+  target:
+    - target: dir
+      arch:
+        - x64
+  icon: assets/icon.ico
+
+nsis:
+  oneClick: false
+  allowToChangeInstallationDirectory: true
+  createDesktopShortcut: true
+  createStartMenuShortcut: true
+  shortcutName: ${productName}
+
+# macOS configuration
+mac:
+  target:
+    - target: dmg
+      arch:
+        - x64
+        - arm64
+  icon: assets/icon.icns
+  category: public.app-category.productivity
+  hardenedRuntime: true
+  gatekeeperAssess: false
+  entitlements: null
+  entitlementsInherit: null
+
+dmg:
+  title: ${productName} ${version}
+  icon: assets/icon.icns
+  background: null
+  contents:
+    - x: 130
+      y: 220
+    - x: 410
+      y: 220
+      type: link
+      path: /Applications
+
+# Compression and publishing
+compression: normal
+
+# GitHub Releases configuration
+publish:
+  - provider: github
+    owner: wireloop1972
+    repo: tirona-electron-wrapper
+    releaseType: release
+    private: false
+

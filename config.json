@@ -1,0 +1,11 @@
+{
+  "development": {
+    "url": "http://localhost:3000",
+    "description": "Local Next.js development server"
+  },
+  "production": {
+    "url": "https://tironabattlemap.vercel.app",
+    "description": "Production Vercel deployment URL"
+  }
+}
+
