@@ -1,0 +1,186 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Tirona - Loading</title>
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=Cinzel:wght@400;600;700&display=swap');
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      width: 100vw; height: 100vh;
+      background: radial-gradient(ellipse at center, #1a1a2e 0%, #0d0d1a 100%);
+      overflow: hidden; display: flex; align-items: center; justify-content: center;
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; color: #e5e5e5;
+    }
+    .bg-pattern {
+      position: absolute; inset: 0; opacity: 0.05;
+      background-image: url("data:image/svg+xml,%3Csvg width='60' height='60' viewBox='0 0 60 60' xmlns='http://www.w3.org/2000/svg'%3E%3Cg fill='none' fill-rule='evenodd'%3E%3Cg fill='%23ffffff' fill-opacity='0.4'%3E%3Cpath d='M36 34v-4h-2v4h-4v2h4v4h2v-4h4v-2h-4zm0-30V0h-2v4h-4v2h4v4h2V6h4V4h-4zM6 34v-4H4v4H0v2h4v4h2v-4h4v-2H6zM6 4V0H4v4H0v2h4v4h2V6h4V4H6z'/%3E%3C/g%3E%3C/g%3E%3C/svg%3E");
+    }
+    .container {
+      position: relative; width: 100%; max-width: 420px; margin: 0 16px; padding: 40px;
+      border-radius: 16px;
+      background: linear-gradient(145deg, rgba(30, 30, 50, 0.9), rgba(20, 20, 35, 0.95));
+      box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5), 0 0 0 1px rgba(255, 191, 0, 0.1);
+      backdrop-filter: blur(20px);
+    }
+    .header { text-align: center; margin-bottom: 32px; }
+    .header h1 {
+      font-family: 'Cinzel', serif; font-size: 28px; font-weight: 600;
+      color: #f59e0b; margin-bottom: 8px; letter-spacing: 2px;
+    }
+    .header p { font-size: 14px; color: #9ca3af; }
+    .status { display: flex; align-items: center; justify-content: center; gap: 12px; margin-bottom: 24px; }
+    .status-text { font-size: 16px; color: #e5e5e5; }
+    .spinner {
+      width: 24px; height: 24px;
+      border: 3px solid rgba(245, 158, 11, 0.3); border-top-color: #f59e0b;
+      border-radius: 50%; animation: spin 1s linear infinite;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    .success-icon {
+      width: 24px; height: 24px; background: #10b981; border-radius: 50%;
+      display: flex; align-items: center; justify-content: center; animation: scaleIn 0.3s ease-out;
+    }
+    .success-icon svg { width: 14px; height: 14px; stroke: white; stroke-width: 3; fill: none; }
+    @keyframes scaleIn { from { transform: scale(0); } to { transform: scale(1); } }
+    .progress-section { display: none; margin-top: 24px; }
+    .progress-section.visible { display: block; animation: fadeIn 0.3s ease-out; }
+    @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+    .progress-bar-container {
+      width: 100%; height: 12px; background: rgba(31, 41, 55, 0.5);
+      border-radius: 6px; overflow: hidden; backdrop-filter: blur(4px);
+    }
+    .progress-bar {
+      height: 100%; width: 0%;
+      background: linear-gradient(90deg, #d97706, #f59e0b, #fbbf24);
+      border-radius: 6px; transition: width 0.3s ease-out;
+    }
+    .progress-stats { display: flex; justify-content: space-between; margin-top: 12px; font-size: 14px; color: #9ca3af; }
+    .progress-percent { color: #f59e0b; font-weight: 600; }
+    .current-file {
+      margin-top: 16px; padding: 12px; background: rgba(31, 41, 55, 0.3);
+      border-radius: 8px; border: 1px solid rgba(75, 85, 99, 0.5);
+    }
+    .current-file-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; }
+    .current-file-name { font-size: 13px; color: #d1d5db; max-width: 200px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .current-file-size { font-size: 12px; color: #6b7280; }
+    .current-file-progress { width: 100%; height: 6px; background: rgba(55, 65, 81, 0.5); border-radius: 3px; overflow: hidden; }
+    .current-file-progress-bar { height: 100%; width: 0%; background: rgba(245, 158, 11, 0.6); border-radius: 3px; transition: width 0.2s ease-out; }
+    .queue-summary { display: flex; justify-content: center; gap: 24px; margin-top: 16px; font-size: 12px; color: #6b7280; }
+    .queue-item span { font-weight: 600; }
+    .queue-item.completed span { color: #10b981; }
+    .queue-item.remaining span { color: #f59e0b; }
+    .queue-item.failed span { color: #ef4444; }
+    .version-info { position: absolute; bottom: 16px; left: 0; right: 0; text-align: center; font-size: 11px; color: #4b5563; }
+    .hidden { display: none !important; }
+  </style>
+</head>
+<body>
+  <div class="bg-pattern"></div>
+  <div class="container">
+    <div class="header">
+      <h1>TIRONA</h1>
+      <p>Preparing your adventure...</p>
+    </div>
+    <div class="status">
+      <div id="spinner" class="spinner"></div>
+      <div id="success-icon" class="success-icon hidden">
+        <svg viewBox="0 0 24 24"><polyline points="20 6 9 17 4 12"></polyline></svg>
+      </div>
+      <span id="status-text" class="status-text">Checking for updates...</span>
+    </div>
+    <div id="progress-section" class="progress-section">
+      <div class="progress-bar-container">
+        <div id="progress-bar" class="progress-bar"></div>
+      </div>
+      <div class="progress-stats">
+        <span id="progress-bytes">0 MB / 0 MB</span>
+        <span id="progress-percent" class="progress-percent">0%</span>
+      </div>
+      <div id="current-file" class="current-file">
+        <div class="current-file-header">
+          <span id="current-file-name" class="current-file-name">-</span>
+          <span id="current-file-size" class="current-file-size">0 KB / 0 KB</span>
+        </div>
+        <div class="current-file-progress">
+          <div id="current-file-progress-bar" class="current-file-progress-bar"></div>
+        </div>
+      </div>
+      <div class="queue-summary">
+        <div class="queue-item completed"><span id="completed-count">0</span> completed</div>
+        <div class="queue-item remaining"><span id="remaining-count">0</span> remaining</div>
+        <div id="failed-item" class="queue-item failed hidden"><span id="failed-count">0</span> failed</div>
+      </div>
+    </div>
+  </div>
+  <div class="version-info">Asset Sync v1.0</div>
+  <script>
+    const spinner = document.getElementById('spinner');
+    const successIcon = document.getElementById('success-icon');
+    const statusText = document.getElementById('status-text');
+    const progressSection = document.getElementById('progress-section');
+    const progressBar = document.getElementById('progress-bar');
+    const progressBytes = document.getElementById('progress-bytes');
+    const progressPercent = document.getElementById('progress-percent');
+    const currentFileName = document.getElementById('current-file-name');
+    const currentFileSize = document.getElementById('current-file-size');
+    const currentFileProgressBar = document.getElementById('current-file-progress-bar');
+    const completedCount = document.getElementById('completed-count');
+    const remainingCount = document.getElementById('remaining-count');
+    const failedItem = document.getElementById('failed-item');
+    const failedCount = document.getElementById('failed-count');
+
+    function formatBytes(bytes) {
+      if (bytes < 1024) return bytes + ' B';
+      if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + ' KB';
+      return (bytes / (1024 * 1024)).toFixed(1) + ' MB';
+    }
+
+    function updateStatus(status, message) {
+      statusText.textContent = message || status;
+      if (status === 'checking') {
+        spinner.classList.remove('hidden');
+        successIcon.classList.add('hidden');
+        progressSection.classList.remove('visible');
+      } else if (status === 'syncing') {
+        spinner.classList.remove('hidden');
+        successIcon.classList.add('hidden');
+        progressSection.classList.add('visible');
+      } else if (status === 'complete' || status === 'skip') {
+        spinner.classList.add('hidden');
+        successIcon.classList.remove('hidden');
+        statusText.textContent = status === 'skip' ? 'Assets up to date!' : 'Sync complete!';
+      }
+    }
+
+    function updateProgress(data) {
+      const { downloadedBytes, totalBytes, currentAsset, currentAssetBytes, currentAssetTotal, completed, remaining, failed } = data;
+      const percent = totalBytes > 0 ? Math.round((downloadedBytes / totalBytes) * 100) : 0;
+      progressBar.style.width = percent + '%';
+      progressBytes.textContent = formatBytes(downloadedBytes) + ' / ' + formatBytes(totalBytes);
+      progressPercent.textContent = percent + '%';
+      if (currentAsset) {
+        const fileName = currentAsset.split('/').pop() || currentAsset;
+        currentFileName.textContent = fileName;
+        currentFileName.title = currentAsset;
+        const filePercent = currentAssetTotal > 0 ? Math.round((currentAssetBytes / currentAssetTotal) * 100) : 0;
+        currentFileProgressBar.style.width = filePercent + '%';
+        currentFileSize.textContent = formatBytes(currentAssetBytes) + ' / ' + formatBytes(currentAssetTotal);
+      }
+      completedCount.textContent = completed || 0;
+      remainingCount.textContent = remaining || 0;
+      if (failed > 0) {
+        failedItem.classList.remove('hidden');
+        failedCount.textContent = failed;
+      }
+    }
+
+    if (window.syncAPI) {
+      window.syncAPI.onStatus((status, message) => updateStatus(status, message));
+      window.syncAPI.onProgress((data) => updateProgress(data));
+      window.syncAPI.ready();
+    }
+  </script>
+</body>
+</html>

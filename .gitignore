@@ -1,24 +1,25 @@
 # Dependencies
 node_modules/
-package-lock.json
-yarn.lock
 
-# Build output
+# Build outputs
 dist/
 release/
+build/
 
-# TypeScript
-*.tsbuildinfo
+# TTS binaries (build artifacts - too large for git)
+tts-binaries/
+
+# Test outputs
+*.wav
+!voices/*.wav
 
 # Logs
-logs/
 *.log
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
-lerna-debug.log*
 
-# Operating System
+# OS
 .DS_Store
 Thumbs.db
 desktop.ini
@@ -30,17 +31,9 @@ desktop.ini
 *.swo
 *~
 
-# Electron
-out/
-build/
+# Models (too large for git)
+models/
 
 # Environment
 .env
 .env.local
-.env.*.local
-
-# Temporary files
-*.tmp
-*.temp
-.cache/
-

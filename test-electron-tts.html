@@ -1,0 +1,560 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Chatterbox TTS Test</title>
+    <style>
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            max-width: 900px;
+            margin: 50px auto;
+            padding: 20px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+        }
+        .container {
+            background: white;
+            padding: 30px;
+            border-radius: 15px;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.3);
+        }
+        h1 {
+            color: #667eea;
+            text-align: center;
+            margin-bottom: 10px;
+        }
+        .engine-selector {
+            display: flex;
+            gap: 15px;
+            justify-content: center;
+            margin: 20px 0;
+        }
+        .engine-btn {
+            padding: 20px 30px;
+            border: 3px solid #667eea;
+            border-radius: 12px;
+            background: white;
+            cursor: pointer;
+            transition: all 0.3s;
+            text-align: center;
+            min-width: 180px;
+        }
+        .engine-btn:hover {
+            transform: translateY(-3px);
+            box-shadow: 0 5px 15px rgba(102, 126, 234, 0.3);
+        }
+        .engine-btn.active {
+            background: #667eea;
+            color: white;
+        }
+        .engine-btn.active .engine-status {
+            color: #a0f0a0;
+        }
+        .engine-btn.disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+        .engine-name {
+            font-size: 18px;
+            font-weight: bold;
+            margin-bottom: 5px;
+        }
+        .engine-status {
+            font-size: 12px;
+            color: #666;
+        }
+        .status {
+            padding: 15px;
+            border-radius: 8px;
+            margin-bottom: 20px;
+            font-weight: bold;
+        }
+        .status.success {
+            background: #d4edda;
+            color: #155724;
+            border: 1px solid #c3e6cb;
+        }
+        .status.starting {
+            background: #fff3cd;
+            color: #856404;
+            border: 1px solid #ffeaa7;
+        }
+        .status.error {
+            background: #f8d7da;
+            color: #721c24;
+            border: 1px solid #f5c6cb;
+        }
+        .status.idle {
+            background: #e2e3e5;
+            color: #383d41;
+            border: 1px solid #d6d8db;
+        }
+        .test-section {
+            margin: 20px 0;
+            padding: 20px;
+            background: #f8f9fa;
+            border-radius: 8px;
+        }
+        .test-section h3 {
+            margin-top: 0;
+            color: #495057;
+        }
+        label {
+            display: block;
+            margin: 10px 0 5px;
+            font-weight: bold;
+            color: #495057;
+        }
+        input, textarea, select {
+            width: 100%;
+            padding: 10px;
+            border: 2px solid #dee2e6;
+            border-radius: 5px;
+            font-size: 14px;
+            box-sizing: border-box;
+        }
+        textarea {
+            min-height: 80px;
+            resize: vertical;
+            font-family: inherit;
+        }
+        button {
+            background: #667eea;
+            color: white;
+            padding: 12px 24px;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+            font-size: 16px;
+            font-weight: bold;
+            margin: 5px;
+            transition: background 0.3s;
+        }
+        button:hover {
+            background: #5568d3;
+        }
+        button:disabled {
+            background: #ccc;
+            cursor: not-allowed;
+        }
+        button.stop-btn {
+            background: #dc3545;
+        }
+        button.stop-btn:hover {
+            background: #c82333;
+        }
+        .voice-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
+            gap: 10px;
+            margin: 15px 0;
+        }
+        .voice-btn {
+            padding: 12px;
+            text-align: center;
+            background: white;
+            border: 2px solid #667eea;
+            border-radius: 8px;
+            cursor: pointer;
+            transition: all 0.3s;
+            font-size: 14px;
+        }
+        .voice-btn:hover {
+            background: #667eea;
+            color: white;
+            transform: translateY(-2px);
+        }
+        .voice-btn.active {
+            background: #667eea;
+            color: white;
+        }
+        .info {
+            background: #e7f3ff;
+            padding: 15px;
+            border-radius: 8px;
+            border-left: 4px solid #667eea;
+            margin: 15px 0;
+        }
+        .info code {
+            background: #f8f9fa;
+            padding: 2px 6px;
+            border-radius: 3px;
+            font-family: 'Courier New', monospace;
+        }
+        .log {
+            background: #2d3748;
+            color: #48bb78;
+            padding: 15px;
+            border-radius: 8px;
+            font-family: 'Courier New', monospace;
+            font-size: 12px;
+            max-height: 200px;
+            overflow-y: auto;
+            margin: 15px 0;
+        }
+        .log-entry { margin: 3px 0; }
+        .log-error { color: #fc8181; }
+        .log-success { color: #68d391; }
+        .log-info { color: #63b3ed; }
+        .log-warn { color: #f6e05e; }
+        .config-display {
+            background: #f1f5f9;
+            padding: 10px;
+            border-radius: 5px;
+            font-family: monospace;
+            font-size: 12px;
+            margin: 10px 0;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🎙️ Chatterbox TTS Test</h1>
+        
+        <div class="test-section">
+            <h3>🔌 TTS Engine</h3>
+            <div class="engine-selector" id="engineSelector">
+                <!-- Orpheus hidden - focusing on Chatterbox only -->
+                <div class="engine-btn disabled" id="engine-orpheus" onclick="selectEngine('orpheus')" style="display: none;">
+                    <div class="engine-name">Orpheus</div>
+                    <div class="engine-status">Disabled</div>
+                </div>
+                <div class="engine-btn disabled" id="engine-chatterbox" onclick="selectEngine('chatterbox')">
+                    <div class="engine-name">Chatterbox</div>
+                    <div class="engine-status">Checking...</div>
+                </div>
+            </div>
+        </div>
+        
+        <div id="status" class="status idle">
+            <div id="statusText">Click Chatterbox to start the TTS engine</div>
+        </div>
+
+        <div class="test-section" id="configSection" style="display: none;">
+            <h3>⚙️ Active Engine Config</h3>
+            <div id="configDisplay" class="config-display"></div>
+        </div>
+
+        <div class="test-section">
+            <h3>🎵 Available Voices</h3>
+            <div id="voicesInfo">Start an engine to see available voices</div>
+            <div id="voiceGrid" class="voice-grid"></div>
+        </div>
+
+        <div class="test-section">
+            <h3>🎤 Generate Speech</h3>
+            
+            <label>Text to Speak:</label>
+            <textarea id="textInput" placeholder="Enter text to convert to speech...">The goblin snarls and raises its spear, ready to attack.</textarea>
+            
+            <label>Voice:</label>
+            <select id="voiceSelect">
+                <option value="default">Default Voice</option>
+            </select>
+            
+            <div style="margin-top: 15px;">
+                <button id="generateBtn" onclick="generateTTS()" disabled>🔊 Generate & Play</button>
+                <button class="stop-btn" onclick="stopAudio()">⏹️ Stop</button>
+                <button onclick="stopEngine()" style="background: #6c757d;">🛑 Stop Engine</button>
+            </div>
+        </div>
+
+        <div class="info">
+            <strong>ℹ️ How to use:</strong>
+            <ol style="margin: 10px 0;">
+                <li>Click the Chatterbox button to start the TTS engine</li>
+                <li>Wait for the engine to initialize (may take 1-2 minutes for first load)</li>
+                <li>Enter text and click "Generate & Play" to hear the speech</li>
+            </ol>
+            <p style="margin-top: 10px; font-size: 12px; color: #666;">
+                <strong>Note:</strong> Chatterbox uses a pre-configured voice sample. Custom voices can be added later.
+            </p>
+        </div>
+
+        <div class="test-section">
+            <h3>📋 Activity Log</h3>
+            <div id="log" class="log"></div>
+        </div>
+    </div>
+
+    <script>
+        let currentAudio = null;
+        let currentConfig = null;
+        let engines = [];
+
+        function addLog(message, type = 'info') {
+            const log = document.getElementById('log');
+            const entry = document.createElement('div');
+            entry.className = `log-entry log-${type}`;
+            entry.textContent = `[${new Date().toLocaleTimeString()}] ${message}`;
+            log.appendChild(entry);
+            log.scrollTop = log.scrollHeight;
+        }
+
+        function updateStatus(text, type = 'idle') {
+            const statusDiv = document.getElementById('status');
+            const statusText = document.getElementById('statusText');
+            statusText.textContent = text;
+            statusDiv.className = `status ${type}`;
+        }
+
+        async function checkEngines() {
+            addLog('Checking available TTS engines...', 'info');
+            
+            if (!window.localTTS) {
+                addLog('ERROR: window.localTTS not available. Not running in Electron?', 'error');
+                updateStatus('Error: Not running in Electron desktop environment', 'error');
+                return;
+            }
+
+            try {
+                engines = await window.localTTS.getEngines();
+                addLog(`Found ${engines.length} engines`, 'success');
+                
+                engines.forEach(engine => {
+                    const btn = document.getElementById(`engine-${engine.id}`);
+                    if (btn) {
+                        const statusEl = btn.querySelector('.engine-status');
+                        if (engine.installed) {
+                            btn.classList.remove('disabled');
+                            statusEl.textContent = '✓ Installed';
+                            statusEl.style.color = '#28a745';
+                            addLog(`  - ${engine.name}: Installed`, 'success');
+                        } else {
+                            statusEl.textContent = '✗ Not installed';
+                            statusEl.style.color = '#dc3545';
+                            addLog(`  - ${engine.name}: Not installed`, 'warn');
+                        }
+                    }
+                });
+
+                // Check if an engine is already running
+                const status = await window.localTTS.getStatus();
+                if (status.running && status.engine) {
+                    addLog(`Engine already running: ${status.engine}`, 'info');
+                    const config = await window.localTTS.getConfig();
+                    if (config) {
+                        setActiveEngine(config);
+                    }
+                } else {
+                    // Auto-start Chatterbox if installed
+                    const chatterbox = engines.find(e => e.id === 'chatterbox');
+                    if (chatterbox && chatterbox.installed) {
+                        addLog('Auto-starting Chatterbox...', 'info');
+                        selectEngine('chatterbox');
+                    }
+                }
+            } catch (error) {
+                addLog('Error checking engines: ' + error.message, 'error');
+            }
+        }
+
+        async function selectEngine(engineId) {
+            const engine = engines.find(e => e.id === engineId);
+            if (!engine || !engine.installed) {
+                addLog(`Engine ${engineId} is not installed`, 'error');
+                return;
+            }
+
+            // Update UI
+            document.querySelectorAll('.engine-btn').forEach(btn => {
+                btn.classList.remove('active');
+            });
+            document.getElementById(`engine-${engineId}`).classList.add('active');
+            
+            updateStatus(`🔄 Starting ${engine.name}... (this may take 1-2 minutes)`, 'starting');
+            addLog(`Starting ${engine.name}...`, 'info');
+            document.getElementById('generateBtn').disabled = true;
+
+            try {
+                const config = await window.localTTS.start(engineId);
+                addLog(`${engine.name} started successfully!`, 'success');
+                setActiveEngine(config);
+            } catch (error) {
+                addLog(`Failed to start ${engine.name}: ${error.message}`, 'error');
+                updateStatus(`❌ Failed to start ${engine.name}: ${error.message}`, 'error');
+                document.getElementById(`engine-${engineId}`).classList.remove('active');
+            }
+        }
+
+        function setActiveEngine(config) {
+            currentConfig = config;
+            
+            // Update status
+            const engineName = config.engine === 'orpheus' ? 'Orpheus' : 'Chatterbox';
+            updateStatus(`✅ ${engineName} Ready - ${config.baseUrl}`, 'success');
+            
+            // Show config
+            document.getElementById('configSection').style.display = 'block';
+            document.getElementById('configDisplay').textContent = JSON.stringify(config, null, 2);
+            
+            // Update voices
+            displayVoices(config.availableVoices);
+            
+            // Enable generate button
+            document.getElementById('generateBtn').disabled = false;
+            
+            // Update active engine button
+            document.querySelectorAll('.engine-btn').forEach(btn => {
+                btn.classList.remove('active');
+            });
+            document.getElementById(`engine-${config.engine}`).classList.add('active');
+        }
+
+        function displayVoices(voices) {
+            const voicesInfo = document.getElementById('voicesInfo');
+            const voiceGrid = document.getElementById('voiceGrid');
+            const voiceSelect = document.getElementById('voiceSelect');
+            
+            voicesInfo.innerHTML = `<p><strong>${voices.length} voices available</strong></p>`;
+            
+            // Update grid
+            voiceGrid.innerHTML = '';
+            voices.forEach(voice => {
+                const btn = document.createElement('div');
+                btn.className = 'voice-btn';
+                btn.textContent = voice.charAt(0).toUpperCase() + voice.slice(1);
+                btn.onclick = () => {
+                    voiceSelect.value = voice;
+                    document.querySelectorAll('.voice-btn').forEach(b => b.classList.remove('active'));
+                    btn.classList.add('active');
+                };
+                voiceGrid.appendChild(btn);
+            });
+            
+            // Update select
+            voiceSelect.innerHTML = '';
+            voices.forEach(voice => {
+                const option = document.createElement('option');
+                option.value = voice;
+                option.textContent = voice.charAt(0).toUpperCase() + voice.slice(1);
+                voiceSelect.appendChild(option);
+            });
+            
+            // Set default voice
+            if (currentConfig && currentConfig.defaultVoice) {
+                voiceSelect.value = currentConfig.defaultVoice;
+            }
+            
+            addLog(`Loaded ${voices.length} voices: ${voices.join(', ')}`, 'info');
+        }
+
+        async function generateTTS() {
+            if (!currentConfig) {
+                alert('Please start an engine first!');
+                return;
+            }
+
+            const text = document.getElementById('textInput').value;
+            const voice = document.getElementById('voiceSelect').value;
+            const btn = document.getElementById('generateBtn');
+            
+            if (!text.trim()) {
+                alert('Please enter some text!');
+                return;
+            }
+            
+            btn.disabled = true;
+            btn.textContent = '🔄 Generating...';
+            addLog(`Generating speech: "${text.substring(0, 50)}..." (voice: ${voice})`, 'info');
+            
+            try {
+                // Use the localTTS API
+                const result = await window.localTTS.speak(text, voice);
+                
+                if (!result.success) {
+                    throw new Error(result.error || 'TTS generation failed');
+                }
+                
+                addLog(`Audio generated successfully`, 'success');
+                
+                // Fetch and play the audio
+                const response = await fetch(result.audioUrl);
+                const blob = await response.blob();
+                const audioUrl = URL.createObjectURL(blob);
+                
+                stopAudio();
+                currentAudio = new Audio(audioUrl);
+                
+                currentAudio.onended = () => {
+                    URL.revokeObjectURL(audioUrl);
+                    addLog('Playback finished', 'info');
+                };
+                
+                currentAudio.onerror = (e) => {
+                    addLog('Playback error: ' + e, 'error');
+                };
+                
+                await currentAudio.play();
+                addLog('Playing audio...', 'success');
+                
+            } catch (error) {
+                addLog('TTS error: ' + error.message, 'error');
+                alert('TTS Generation Failed:\n' + error.message);
+            } finally {
+                btn.disabled = false;
+                btn.textContent = '🔊 Generate & Play';
+            }
+        }
+
+        async function stopEngine() {
+            addLog('Stopping engine...', 'info');
+            try {
+                await window.localTTS.stop();
+                addLog('Engine stopped', 'success');
+                currentConfig = null;
+                
+                // Reset UI
+                document.querySelectorAll('.engine-btn').forEach(btn => {
+                    btn.classList.remove('active');
+                });
+                document.getElementById('configSection').style.display = 'none';
+                document.getElementById('voicesInfo').textContent = 'Start an engine to see available voices';
+                document.getElementById('voiceGrid').innerHTML = '';
+                document.getElementById('generateBtn').disabled = true;
+                updateStatus('Engine stopped. Click Chatterbox to restart.', 'idle');
+            } catch (error) {
+                addLog('Error stopping engine: ' + error.message, 'error');
+            }
+        }
+
+        function stopAudio() {
+            if (currentAudio) {
+                currentAudio.pause();
+                currentAudio.currentTime = 0;
+                currentAudio = null;
+                addLog('Audio stopped', 'info');
+            }
+        }
+
+        // Listen for TTS ready events
+        if (window.localTTS) {
+            window.localTTS.onReady((config) => {
+                addLog('TTS ready notification received', 'success');
+                setActiveEngine(config);
+            });
+        }
+
+        // Initialize on load
+        window.addEventListener('load', () => {
+            addLog('Test page loaded', 'info');
+            
+            if (window.IN_DESKTOP_ENV) {
+                addLog('Running in Electron desktop environment', 'success');
+            } else {
+                addLog('WARNING: Not in Electron environment', 'warn');
+            }
+            
+            checkEngines();
+        });
+
+        // Keyboard shortcut
+        document.addEventListener('keydown', (e) => {
+            if (e.ctrlKey && e.key === 'Enter') {
+                generateTTS();
+            }
+        });
+    </script>
+</body>
+</html>

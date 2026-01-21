@@ -17,6 +17,20 @@ files:
 extraFiles:
   - config.json
 
+# Include TTS server binary
+# Chatterbox is bundled as a standalone executable with all dependencies
+#
+# Chatterbox (bundled Python server):
+#   Build: cd chatterbox-tts-api && pyinstaller chatterbox_server.spec --clean -y
+#   Copy: chatterbox-tts-api/dist/chatterbox_server -> tts-binaries/chatterbox_server
+#
+extraResources:
+  # Chatterbox TTS engine
+  - from: tts-binaries/chatterbox_server
+    to: chatterbox
+    filter:
+      - "**/*"
+
 # Windows configuration
 win:
   target:
