@@ -1,0 +1,12 @@
+"DepotBuild"
+{
+	"DepotID"	"4503863"
+	"ContentRoot"	"..\\content\\win_tts"
+
+	"FileMapping"
+	{
+		"LocalPath"	"*"
+		"DepotPath"	"."
+		"Recursive"	"1"
+	}
+}

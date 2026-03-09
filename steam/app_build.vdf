@@ -1,0 +1,14 @@
+"AppBuild"
+{
+	"AppID"		"4503860"
+	"Desc"		"Tirona Rebirth Windows build"
+	"BuildOutput"	"..\\output"
+	"ContentRoot"	"..\\content"
+
+	"Depots"
+	{
+		"4503861"	"depot_code.vdf"
+		"4503862"	"depot_content.vdf"
+		"4503863"	"depot_tts.vdf"
+	}
+}

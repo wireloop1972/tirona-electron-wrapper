@@ -1,0 +1,14 @@
+"DepotBuild"
+{
+	"DepotID"	"4503861"
+	"ContentRoot"	"..\\content\\win_base"
+
+	"FileMapping"
+	{
+		"LocalPath"	"*"
+		"DepotPath"	"."
+		"Recursive"	"1"
+	}
+
+	"FileExclusion"	"*.pdb"
+}

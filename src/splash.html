@@ -1,0 +1,163 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Tirona</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+
+    body {
+      width: 100vw;
+      height: 100vh;
+      background-color: #000;
+      overflow: hidden;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-family: 'Segoe UI', -apple-system, BlinkMacSystemFont, sans-serif;
+    }
+
+    #video-container {
+      width: 100%; height: 100%;
+      display: flex; align-items: center; justify-content: center;
+      position: relative;
+    }
+
+    video {
+      width: 100vw; height: 100vh;
+      object-fit: contain;
+    }
+
+    #skip-button {
+      position: absolute; bottom: 40px; right: 40px;
+      color: white; font-size: 16px; cursor: pointer;
+      padding: 10px 20px;
+      background-color: rgba(0, 0, 0, 0.3);
+      border-radius: 4px; user-select: none;
+      opacity: 0;
+      animation: fadeIn 0.5s ease-in 2s forwards;
+      transition: background-color 0.2s ease;
+    }
+    #skip-button:hover { background-color: rgba(0, 0, 0, 0.6); }
+
+    /* ── Phase 2: TTS Loading ─────────────────────────────── */
+
+    #tts-loading {
+      display: none;
+      position: absolute; inset: 0;
+      flex-direction: column;
+      align-items: center; justify-content: center;
+      background: #000;
+      z-index: 10;
+      opacity: 0;
+      transition: opacity 0.6s ease-in;
+    }
+    #tts-loading.visible {
+      display: flex;
+      opacity: 1;
+    }
+
+    .spinner-icon {
+      width: 120px; height: 120px;
+      animation: spin 3s linear infinite;
+      filter: drop-shadow(0 0 20px rgba(184, 146, 82, 0.4));
+    }
+
+    .loading-text {
+      margin-top: 32px;
+      color: #b89252;
+      font-size: 18px;
+      font-weight: 300;
+      letter-spacing: 2px;
+      text-transform: uppercase;
+      animation: pulse 2s ease-in-out infinite;
+    }
+
+    .loading-sub {
+      margin-top: 10px;
+      color: rgba(184, 146, 82, 0.5);
+      font-size: 13px;
+      font-weight: 300;
+      letter-spacing: 1px;
+    }
+
+    @keyframes spin {
+      from { transform: rotate(0deg); }
+      to   { transform: rotate(360deg); }
+    }
+
+    @keyframes pulse {
+      0%, 100% { opacity: 0.6; }
+      50%      { opacity: 1; }
+    }
+
+    @keyframes fadeIn {
+      from { opacity: 0; }
+      to   { opacity: 0.8; }
+    }
+  </style>
+</head>
+<body>
+  <div id="video-container">
+    <video id="splash-video" autoplay>
+      <source src="../assets/TironaFading.mp4" type="video/mp4">
+    </video>
+    <div id="skip-button">Skip</div>
+
+    <div id="tts-loading">
+      <img class="spinner-icon" src="../assets/tironaicon.png" alt="">
+      <div class="loading-text">Enabling Voice Narrator</div>
+      <div class="loading-sub">Preparing the storyteller&hellip;</div>
+    </div>
+  </div>
+
+  <script>
+    const video = document.getElementById('splash-video');
+    const skipBtn = document.getElementById('skip-button');
+    const ttsLoading = document.getElementById('tts-loading');
+
+    let videoEnded = false;
+    let ttsReady = false;
+    let ttsNeeded = false;
+
+    const finish = () => {
+      if (window.splashAPI) window.splashAPI.splashFinished();
+    };
+
+    const onVideoEnd = () => {
+      if (videoEnded) return;
+      videoEnded = true;
+      video.style.display = 'none';
+      skipBtn.style.display = 'none';
+
+      if (ttsNeeded && !ttsReady) {
+        ttsLoading.classList.add('visible');
+      } else {
+        finish();
+      }
+    };
+
+    video.addEventListener('ended', onVideoEnd);
+    video.addEventListener('error', () => {
+      setTimeout(onVideoEnd, 500);
+    });
+    skipBtn.addEventListener('click', onVideoEnd);
+    document.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape') onVideoEnd();
+    });
+    document.addEventListener('contextmenu', (e) => e.preventDefault());
+
+    if (window.splashAPI) {
+      window.splashAPI.onTTSNeeded(() => {
+        ttsNeeded = true;
+      });
+
+      window.splashAPI.onTTSReady(() => {
+        ttsReady = true;
+        if (videoEnded) finish();
+      });
+    }
+  </script>
+</body>
+</html>

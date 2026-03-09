@@ -1,0 +1,357 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Tirona TTS Test – Chatterbox Turbo</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      background: #0d1117; color: #c9d1d9; padding: 24px;
+    }
+    h1 { font-size: 22px; margin-bottom: 4px; }
+    .subtitle { color: #8b949e; font-size: 13px; margin-bottom: 20px; }
+    .gpu-badge {
+      display: inline-block; padding: 4px 10px; border-radius: 12px;
+      font-size: 12px; font-weight: 600; margin-bottom: 16px;
+    }
+    .gpu-ok { background: #1b4332; color: #52c41a; }
+    .gpu-no { background: #3b1a1a; color: #f85149; }
+    .card {
+      background: #161b22; border: 1px solid #30363d; border-radius: 8px;
+      padding: 16px; margin-bottom: 16px;
+    }
+    .card h2 { font-size: 15px; margin-bottom: 12px; color: #e6edf3; }
+    label { display: block; font-size: 13px; color: #8b949e; margin-bottom: 4px; }
+    textarea {
+      width: 100%; height: 100px; background: #0d1117; color: #c9d1d9;
+      border: 1px solid #30363d; border-radius: 6px; padding: 10px;
+      font-size: 14px; resize: vertical; font-family: inherit;
+    }
+    .char-count { font-size: 12px; color: #8b949e; text-align: right; margin-top: 2px; }
+    .char-count.warn { color: #d29922; }
+    .char-count.danger { color: #f85149; }
+    .params-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+    .param-group label { margin-bottom: 2px; }
+    .param-row { display: flex; align-items: center; gap: 8px; }
+    .param-row input[type="range"] { flex: 1; accent-color: #58a6ff; }
+    .param-row .val { min-width: 40px; text-align: right; font-size: 13px; color: #58a6ff; }
+    select, input[type="number"] {
+      background: #0d1117; color: #c9d1d9; border: 1px solid #30363d;
+      border-radius: 6px; padding: 6px 8px; font-size: 13px; width: 100%;
+    }
+    .btn {
+      display: inline-block; padding: 8px 20px; border: none; border-radius: 6px;
+      font-size: 14px; font-weight: 600; cursor: pointer; margin-right: 8px;
+      margin-top: 8px;
+    }
+    .btn-primary { background: #238636; color: #fff; }
+    .btn-primary:hover { background: #2ea043; }
+    .btn-primary:disabled { background: #21262d; color: #484f58; cursor: not-allowed; }
+    .btn-secondary { background: #21262d; color: #c9d1d9; border: 1px solid #30363d; }
+    .btn-secondary:hover { background: #30363d; }
+    .btn-danger { background: #da3633; color: #fff; }
+    .presets { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 12px; }
+    .presets button {
+      background: #21262d; color: #8b949e; border: 1px solid #30363d;
+      border-radius: 4px; padding: 4px 10px; font-size: 12px; cursor: pointer;
+    }
+    .presets button:hover { color: #c9d1d9; border-color: #58a6ff; }
+    #log {
+      background: #010409; border: 1px solid #30363d; border-radius: 6px;
+      padding: 10px; font-family: 'Cascadia Code', 'Fira Code', monospace;
+      font-size: 12px; height: 160px; overflow-y: auto; white-space: pre-wrap;
+      color: #7ee787;
+    }
+    #status { font-size: 13px; color: #8b949e; margin-bottom: 8px; }
+    audio { width: 100%; margin-top: 12px; }
+  </style>
+</head>
+<body>
+  <h1>Chatterbox Turbo – TTS Test</h1>
+  <p class="subtitle">CUDA-only local TTS for Tirona RPG</p>
+
+  <div id="gpuBadge" class="gpu-badge gpu-no">Checking GPU...</div>
+
+  <!-- Status -->
+  <div class="card">
+    <h2>Server</h2>
+    <div id="status">Checking...</div>
+    <button id="btnStart" class="btn btn-primary" disabled>Start Server</button>
+    <button id="btnStop" class="btn btn-danger" disabled>Stop Server</button>
+  </div>
+
+  <!-- Text Input -->
+  <div class="card">
+    <h2>Input</h2>
+    <div class="presets">
+      <button onclick="setPreset('hello')">Hello</button>
+      <button onclick="setPreset('laugh')">Laugh tag</button>
+      <button onclick="setPreset('cough')">Cough tag</button>
+      <button onclick="setPreset('chuckle')">Chuckle tag</button>
+      <button onclick="setPreset('narrative')">Narrative</button>
+      <button onclick="setPreset('bark')">Battle bark</button>
+    </div>
+    <textarea id="textInput" placeholder="Enter text to synthesize...">Hello there! Welcome to the world of Tirona.</textarea>
+    <div id="charCount" class="char-count">46 / 300</div>
+
+    <label style="margin-top:12px">Voice</label>
+    <select id="voiceSelect"><option value="default">default</option></select>
+  </div>
+
+  <!-- Generation Parameters -->
+  <div class="card">
+    <h2>Generation Parameters</h2>
+    <div class="params-grid">
+      <div class="param-group">
+        <label>Exaggeration</label>
+        <div class="param-row">
+          <input type="range" id="exaggeration" min="0.25" max="2.0" step="0.05" value="0.5">
+          <span class="val" id="exaggerationVal">0.50</span>
+        </div>
+      </div>
+      <div class="param-group">
+        <label>CFG Weight</label>
+        <div class="param-row">
+          <input type="range" id="cfgWeight" min="0.0" max="1.0" step="0.05" value="0.5">
+          <span class="val" id="cfgWeightVal">0.50</span>
+        </div>
+      </div>
+      <div class="param-group">
+        <label>Temperature</label>
+        <div class="param-row">
+          <input type="range" id="temperature" min="0.05" max="2.0" step="0.05" value="0.7">
+          <span class="val" id="temperatureVal">0.70</span>
+        </div>
+      </div>
+      <div class="param-group">
+        <label>Speed Factor</label>
+        <div class="param-row">
+          <input type="range" id="speedFactor" min="0.5" max="2.0" step="0.05" value="1.0">
+          <span class="val" id="speedFactorVal">1.00</span>
+        </div>
+      </div>
+      <div class="param-group">
+        <label>Seed (-1 = random)</label>
+        <input type="number" id="seed" value="-1" min="-1" max="999999">
+      </div>
+    </div>
+  </div>
+
+  <!-- Generate -->
+  <div class="card">
+    <h2>Output</h2>
+    <button id="btnSpeak" class="btn btn-primary" disabled>Generate & Play</button>
+    <button id="btnSpeakSimple" class="btn btn-secondary" disabled>Generate (no params)</button>
+    <audio id="audioPlayer" controls style="display:none"></audio>
+  </div>
+
+  <!-- Log -->
+  <div class="card">
+    <h2>Log</h2>
+    <div id="log"></div>
+  </div>
+
+  <script>
+    const $ = (id) => document.getElementById(id);
+    let currentAudio = null;
+
+    const presets = {
+      hello: 'Hello there! Welcome to the world of Tirona.',
+      laugh: 'That was absolutely hilarious [laugh] I cannot believe you did that!',
+      cough: 'Excuse me [cough] sorry about that. As I was saying...',
+      chuckle: 'Well well well [chuckle] look who finally showed up to the party.',
+      narrative: 'The ancient fortress loomed ahead, its crumbling walls casting long shadows across the desolate plain. A cold wind howled through the broken battlements.',
+      bark: 'For the Alliance! Charge!',
+    };
+
+    const setPreset = (key) => {
+      $('textInput').value = presets[key] || '';
+      updateCharCount();
+    };
+
+    const log = (msg) => {
+      const el = $('log');
+      const ts = new Date().toLocaleTimeString();
+      el.textContent += `[${ts}] ${msg}\n`;
+      el.scrollTop = el.scrollHeight;
+    };
+
+    const updateCharCount = () => {
+      const len = $('textInput').value.length;
+      const el = $('charCount');
+      el.textContent = `${len} / 300`;
+      el.className = 'char-count' + (len > 350 ? ' danger' : len > 300 ? ' warn' : '');
+    };
+
+    // Wire up sliders
+    for (const id of ['exaggeration', 'cfgWeight', 'temperature', 'speedFactor']) {
+      const slider = $(id);
+      const display = $(id + 'Val');
+      slider.addEventListener('input', () => {
+        display.textContent = parseFloat(slider.value).toFixed(2);
+      });
+    }
+
+    $('textInput').addEventListener('input', updateCharCount);
+    updateCharCount();
+
+    // ── Init ──────────────────────────────────────────────────────────────
+
+    const init = async () => {
+      log('Initializing...');
+
+      // GPU check
+      const gpu = await window.localTTS.isGpuAvailable();
+      const badge = $('gpuBadge');
+      if (gpu.available) {
+        badge.textContent = `GPU: ${gpu.gpuName} (${gpu.vramMB} MB)`;
+        badge.className = 'gpu-badge gpu-ok';
+        log(`NVIDIA GPU detected: ${gpu.gpuName}`);
+      } else {
+        badge.textContent = 'No NVIDIA GPU – TTS unavailable';
+        badge.className = 'gpu-badge gpu-no';
+        log('No NVIDIA GPU detected. TTS features disabled.');
+        $('status').textContent = 'TTS requires an NVIDIA GPU.';
+        return;
+      }
+
+      // Server installed?
+      const installed = await window.localTTS.isInstalled();
+      if (!installed) {
+        log('TTS server files not found. Run: npm run setup:tts');
+        $('status').textContent = 'Server not installed. Run npm run setup:tts';
+        return;
+      }
+      log('TTS server files found');
+
+      $('btnStart').disabled = false;
+
+      // Check if already running
+      const status = await window.localTTS.getStatus();
+      if (status.running && status.ready) {
+        log('Server already running');
+        onServerReady();
+      } else {
+        $('status').textContent = 'Server stopped. Click Start to begin.';
+      }
+    };
+
+    const onServerReady = async () => {
+      $('status').textContent = 'Server running (Chatterbox Turbo, CUDA)';
+      $('btnStart').disabled = true;
+      $('btnStop').disabled = false;
+      $('btnSpeak').disabled = false;
+      $('btnSpeakSimple').disabled = false;
+
+      // Load voices
+      try {
+        const result = await window.localTTS.getVoices();
+        const sel = $('voiceSelect');
+        sel.innerHTML = '';
+        for (const v of (result.voices || ['default'])) {
+          const opt = document.createElement('option');
+          opt.value = v; opt.textContent = v;
+          sel.appendChild(opt);
+        }
+        log(`Voices loaded: ${(result.voices || []).join(', ') || 'default'}`);
+      } catch (e) {
+        log(`Voice fetch error: ${e}`);
+      }
+    };
+
+    // ── Start / Stop ──────────────────────────────────────────────────────
+
+    $('btnStart').addEventListener('click', async () => {
+      $('btnStart').disabled = true;
+      $('status').textContent = 'Starting Chatterbox Turbo (loading model)...';
+      log('Starting server...');
+      try {
+        const config = await window.localTTS.start();
+        log(`Server started: ${JSON.stringify(config)}`);
+        onServerReady();
+      } catch (e) {
+        log(`Start failed: ${e}`);
+        $('status').textContent = `Start failed: ${e}`;
+        $('btnStart').disabled = false;
+      }
+    });
+
+    $('btnStop').addEventListener('click', async () => {
+      log('Stopping server...');
+      await window.localTTS.stop();
+      $('status').textContent = 'Server stopped.';
+      $('btnStart').disabled = false;
+      $('btnStop').disabled = true;
+      $('btnSpeak').disabled = true;
+      $('btnSpeakSimple').disabled = true;
+      log('Server stopped');
+    });
+
+    // ── Speak (with params) ──────────────────────────────────────────────
+
+    const doSpeak = async (useParams) => {
+      const text = $('textInput').value.trim();
+      if (!text) { log('No text entered'); return; }
+
+      const voice = $('voiceSelect').value;
+      const label = useParams ? 'Generate (with params)' : 'Generate (simple)';
+      log(`${label}: "${text.substring(0, 60)}..." voice=${voice}`);
+
+      $('btnSpeak').disabled = true;
+      $('btnSpeakSimple').disabled = true;
+
+      try {
+        const params = useParams ? {
+          exaggeration: parseFloat($('exaggeration').value),
+          cfgWeight: parseFloat($('cfgWeight').value),
+          temperature: parseFloat($('temperature').value),
+          speedFactor: parseFloat($('speedFactor').value),
+          seed: parseInt($('seed').value, 10),
+        } : undefined;
+
+        const t0 = performance.now();
+        const result = await window.localTTS.speak(text, voice, params);
+        const elapsed = Math.round(performance.now() - t0);
+
+        if (result.success) {
+          log(`Audio received in ${elapsed}ms`);
+          const resp = await fetch(result.audioUrl);
+          const blob = await resp.blob();
+          const url = URL.createObjectURL(blob);
+
+          if (currentAudio) { currentAudio.pause(); URL.revokeObjectURL(currentAudio.src); }
+          const player = $('audioPlayer');
+          player.src = url;
+          player.style.display = 'block';
+          currentAudio = player;
+          player.play();
+          log('Playing audio');
+        } else {
+          log(`Error: ${result.error}`);
+        }
+      } catch (e) {
+        log(`Exception: ${e}`);
+      }
+
+      $('btnSpeak').disabled = false;
+      $('btnSpeakSimple').disabled = false;
+    };
+
+    $('btnSpeak').addEventListener('click', () => doSpeak(true));
+    $('btnSpeakSimple').addEventListener('click', () => doSpeak(false));
+
+    // ── Ready listener ───────────────────────────────────────────────────
+
+    if (window.localTTS) {
+      window.localTTS.onReady((config) => {
+        log(`tts:ready event: ${JSON.stringify(config)}`);
+        onServerReady();
+      });
+    }
+
+    init();
+  </script>
+</body>
+</html>
