@@ -48,6 +48,23 @@ contextBridge.exposeInMainWorld('localTTS', {
 });
 
 // =============================================================================
+// Local STT API – faster-whisper (same Python server as TTS)
+// =============================================================================
+
+contextBridge.exposeInMainWorld('localSTT', {
+  transcribe: (audioData: ArrayBuffer) =>
+    ipcRenderer.invoke('stt:transcribe', audioData),
+
+  onReady: (callback: (config: unknown) => void) => {
+    ipcRenderer.on('tts:ready', (_event, config) => callback(config));
+  },
+
+  removeReadyListener: () => {
+    ipcRenderer.removeAllListeners('tts:ready');
+  },
+});
+
+// =============================================================================
 // Electron API (window controls, splash, settings)
 // =============================================================================
 
@@ -78,7 +95,19 @@ contextBridge.exposeInMainWorld('electron', {
 });
 
 // =============================================================================
+// Steam Auth API
+// =============================================================================
+
+contextBridge.exposeInMainWorld('tironaSteam', {
+  isAvailable: () => ipcRenderer.invoke('steam:isAvailable'),
+  getAuthTicket: () => ipcRenderer.invoke('steam:getAuthTicket'),
+});
+
+// =============================================================================
 // Logging
 // =============================================================================
 
-console.log('[Preload] Loaded – APIs: window.localTTS, window.electron');
+console.log(
+  '[Preload] Loaded – APIs: window.localTTS, window.localSTT,'
+  + ' window.electron, window.tironaSteam'
+);

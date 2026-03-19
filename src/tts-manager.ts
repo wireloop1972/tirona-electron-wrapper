@@ -75,6 +75,13 @@ const getPythonExe = (): string => {
   return path.join(serverDir, 'venv', 'bin', 'python');
 };
 
+const getServerScript = (): string => {
+  const serverDir = getServerDir();
+  const sttLauncher = path.join(serverDir, 'launch_with_stt.py');
+  if (fs.existsSync(sttLauncher)) return sttLauncher;
+  return path.join(serverDir, 'server.py');
+};
+
 export const isServerInstalled = (): boolean => {
   const pythonExe = getPythonExe();
   const serverPy = path.join(getServerDir(), 'server.py');
@@ -241,16 +248,16 @@ export const startServer = async (): Promise<LocalTTSConfig> => {
 
   const pythonExe = getPythonExe();
   const serverDir = getServerDir();
-  const serverPy = path.join(serverDir, 'server.py');
+  const serverScript = getServerScript();
 
   if (!fs.existsSync(pythonExe)) {
     throw new Error(`Bundled Python not found at: ${pythonExe}`);
   }
-  if (!fs.existsSync(serverPy)) {
-    throw new Error(`server.py not found at: ${serverPy}`);
+  if (!fs.existsSync(serverScript)) {
+    throw new Error(`Server script not found at: ${serverScript}`);
   }
 
-  console.log(`[TTS Manager] Spawning: ${pythonExe} ${serverPy}`);
+  console.log(`[TTS Manager] Spawning: ${pythonExe} ${serverScript}`);
 
   const spawnEnv: Record<string, string> = {
     ...(process.env as Record<string, string>),
@@ -258,7 +265,7 @@ export const startServer = async (): Promise<LocalTTSConfig> => {
     PYTHONUTF8: '1',
   };
 
-  currentProcess = spawn(pythonExe, [serverPy], {
+  currentProcess = spawn(pythonExe, [serverScript], {
     stdio: ['ignore', 'pipe', 'pipe'],
     detached: false,
     env: spawnEnv,
@@ -370,4 +377,41 @@ export const getConfig = async (): Promise<LocalTTSConfig | null> => {
 export const getBaseUrl = async (): Promise<string | null> => {
   const status = await getStatus();
   return status.ready ? BASE_URL : null;
+};
+
+// =============================================================================
+// STT – Speech-to-Text (faster-whisper via /stt endpoint)
+// =============================================================================
+
+export interface STTResult {
+  text: string;
+  language: string;
+  duration: number;
+}
+
+export const transcribeAudio = async (
+  audioBuffer: Buffer,
+  filename = 'recording.webm'
+): Promise<STTResult> => {
+  const baseUrl = await getBaseUrl();
+  if (!baseUrl) {
+    throw new Error('Python server is not running');
+  }
+
+  const blob = new Blob([audioBuffer]);
+  const form = new FormData();
+  form.append('audio', blob, filename);
+
+  const res = await fetch(`${BASE_URL}/stt`, {
+    method: 'POST',
+    body: form,
+    signal: AbortSignal.timeout(30_000),
+  });
+
+  if (!res.ok) {
+    const errBody = await res.text().catch(() => '');
+    throw new Error(`STT HTTP ${res.status}: ${errBody}`);
+  }
+
+  return (await res.json()) as STTResult;
 };

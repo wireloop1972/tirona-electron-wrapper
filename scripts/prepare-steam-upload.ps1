@@ -1,7 +1,7 @@
 <#
 .SYNOPSIS
   Copies the Electron build output into the Steamworks ContentBuilder
-  folder structure (3 depots), copies VDF scripts, and optionally
+  folder structure (4 depots), copies VDF scripts, and optionally
   runs steamcmd to upload.
 
 .PARAMETER SdkPath
@@ -83,10 +83,12 @@ $scriptsDir   = Join-Path $SdkPath "scripts"
 $winBase      = Join-Path $contentDir "win_base"
 $winAssets    = Join-Path $contentDir "win_assets"
 $winTts       = Join-Path $contentDir "win_tts"
+$winStatic    = Join-Path $contentDir "win_static"
 
-$srcResources = Join-Path $BuildDir "resources"
-$srcAssetPack = Join-Path $srcResources "asset-pack"
-$srcTtsServer = Join-Path $srcResources "tts-server"
+$srcResources  = Join-Path $BuildDir "resources"
+$srcAssetPack  = Join-Path $srcResources "asset-pack"
+$srcTtsServer  = Join-Path $srcResources "tts-server"
+$srcStaticPack = Join-Path $srcResources "static-pack"
 
 # ── Clean and create content directories ─────────────────────────────────────
 
@@ -98,22 +100,23 @@ Write-Host "  Build dir  : $BuildDir"
 Write-Host "  SDK path   : $SdkPath"
 Write-Host ""
 
-Write-Host "[1/5] Cleaning content directories..." -ForegroundColor Yellow
-foreach ($dir in @($winBase, $winAssets, $winTts)) {
+Write-Host "[1/6] Cleaning content directories..." -ForegroundColor Yellow
+foreach ($dir in @($winBase, $winAssets, $winTts, $winStatic)) {
   if (Test-Path $dir) { Remove-Item $dir -Recurse -Force }
   New-Item $dir -ItemType Directory -Force | Out-Null
 }
 
 # ── Copy Code Depot (win_base) ───────────────────────────────────────────────
 
-Write-Host "[2/5] Copying code depot (Electron + JS)..." -ForegroundColor Yellow
+Write-Host "[2/6] Copying code depot (Electron + JS)..." -ForegroundColor Yellow
 
 # Copy everything from build dir to win_base
 robocopy $BuildDir $winBase /E /NFL /NDL /NJH /NJS /NP | Out-Null
 
-# Remove asset-pack and tts-server from win_base (they go in their own depots)
-$baseAssetPack = Join-Path $winBase "resources\asset-pack"
-$baseTtsServer = Join-Path $winBase "resources\tts-server"
+# Remove asset-pack, tts-server, static-pack from win_base (they go in own depots)
+$baseAssetPack  = Join-Path $winBase "resources\asset-pack"
+$baseTtsServer  = Join-Path $winBase "resources\tts-server"
+$baseStaticPack = Join-Path $winBase "resources\static-pack"
 
 if (Test-Path $baseAssetPack) {
   Remove-Item $baseAssetPack -Recurse -Force
@@ -123,6 +126,10 @@ if (Test-Path $baseTtsServer) {
   Remove-Item $baseTtsServer -Recurse -Force
   Write-Host "  Removed tts-server from code depot"
 }
+if (Test-Path $baseStaticPack) {
+  Remove-Item $baseStaticPack -Recurse -Force
+  Write-Host "  Removed static-pack from code depot"
+}
 
 $codeSize = [math]::Round(
   (Get-ChildItem $winBase -Recurse -File | Measure-Object -Property Length -Sum).Sum / 1MB, 1
@@ -131,7 +138,7 @@ Write-Host "  Code depot: $codeSize MB"
 
 # ── Copy Assets Depot (win_assets) ───────────────────────────────────────────
 
-Write-Host "[3/5] Copying assets depot..." -ForegroundColor Yellow
+Write-Host "[3/6] Copying assets depot..." -ForegroundColor Yellow
 
 if (Test-Path $srcAssetPack) {
   $destAssetPack = Join-Path $winAssets "resources\asset-pack"
@@ -149,7 +156,7 @@ if (Test-Path $srcAssetPack) {
 
 # ── Copy TTS Depot (win_tts) ─────────────────────────────────────────────────
 
-Write-Host "[4/5] Copying TTS depot..." -ForegroundColor Yellow
+Write-Host "[4/6] Copying TTS depot..." -ForegroundColor Yellow
 
 if (Test-Path $srcTtsServer) {
   $destTtsServer = Join-Path $winTts "resources\tts-server"
@@ -165,9 +172,27 @@ if (Test-Path $srcTtsServer) {
   Write-Host "  WARNING: No tts-server found at $srcTtsServer" -ForegroundColor Red
 }
 
+# ── Copy Static Depot (win_static) ────────────────────────────────────────────
+
+Write-Host "[5/6] Copying static depot (PBR textures, HDRIs)..." -ForegroundColor Yellow
+
+if (Test-Path $srcStaticPack) {
+  $destStaticPack = Join-Path $winStatic "resources\static-pack"
+  New-Item $destStaticPack -ItemType Directory -Force | Out-Null
+  robocopy $srcStaticPack $destStaticPack /E /NFL /NDL /NJH /NJS /NP | Out-Null
+
+  $staticSize = [math]::Round(
+    (Get-ChildItem $destStaticPack -Recurse -File | Measure-Object -Property Length -Sum).Sum / 1MB, 1
+  )
+  $staticCount = (Get-ChildItem $destStaticPack -Recurse -File).Count
+  Write-Host "  Static depot: $staticSize MB ($staticCount files)"
+} else {
+  Write-Host "  WARNING: No static-pack found at $srcStaticPack" -ForegroundColor Red
+}
+
 # ── Copy VDF scripts ─────────────────────────────────────────────────────────
 
-Write-Host "[5/5] Copying VDF build scripts..." -ForegroundColor Yellow
+Write-Host "[6/6] Copying VDF build scripts..." -ForegroundColor Yellow
 
 $vdfDir = Join-Path $ProjectRoot "steam"
 if (-not (Test-Path $scriptsDir)) {
@@ -178,8 +203,9 @@ Copy-Item (Join-Path $vdfDir "app_build.vdf") $scriptsDir -Force
 Copy-Item (Join-Path $vdfDir "depot_code.vdf") $scriptsDir -Force
 Copy-Item (Join-Path $vdfDir "depot_content.vdf") $scriptsDir -Force
 Copy-Item (Join-Path $vdfDir "depot_tts.vdf") $scriptsDir -Force
+Copy-Item (Join-Path $vdfDir "depot_static.vdf") $scriptsDir -Force
 
-Write-Host "  Copied 4 VDF files to $scriptsDir"
+Write-Host "  Copied 5 VDF files to $scriptsDir"
 
 # ── Summary ──────────────────────────────────────────────────────────────────
 
@@ -190,6 +216,7 @@ Write-Host "================================================" -ForegroundColor G
 Write-Host "  content\win_base\    -> Depot 4503861 (Code)"
 Write-Host "  content\win_assets\  -> Depot 4503862 (Assets)"
 Write-Host "  content\win_tts\     -> Depot 4503863 (TTS)"
+Write-Host "  content\win_static\  -> Depot 4503864 (Static)"
 Write-Host "  scripts\             -> VDF build scripts"
 Write-Host ""
 

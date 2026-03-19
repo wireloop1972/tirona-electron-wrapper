@@ -1,6 +1,7 @@
 import {
   app,
   BrowserWindow,
+  dialog,
   shell,
   ipcMain,
   Menu,
@@ -19,13 +20,17 @@ import {
   getBaseUrl,
   fetchVoices,
   isServerInstalled,
+  transcribeAudio,
   type TTSGenerationParams,
 } from './tts-manager';
 import {
   getAssetPackPath,
+  getStaticPackPath,
   loadBundledManifest,
   buildBlobLookup,
   getMimeType,
+  isStaticAssetPath,
+  resolveStaticAsset,
 } from './asset-sync-manager';
 
 interface AppConfig {
@@ -39,6 +44,32 @@ interface AppConfig {
 
 let mainWindow: BrowserWindow | null = null;
 let splashWindow: BrowserWindow | null = null;
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+let steamClient: any = null;
+
+const initSteam = (): void => {
+  try {
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    const steamworks = require('steamworks.js');
+    steamClient = steamworks.init(4503860);
+    app.commandLine.appendSwitch('in-process-gpu');
+    app.commandLine.appendSwitch('disable-direct-composition');
+    console.log(
+      '[Steam] Initialized. User:',
+      steamClient.localplayer.getName()
+    );
+  } catch (e) {
+    console.error('[Steam] Failed to init:', e);
+    if (app.isPackaged && isSteamBuild()) {
+      dialog.showErrorBox(
+        'Tirona Rebirth',
+        'Please launch the game from your Steam library.'
+      );
+      app.quit();
+    }
+  }
+};
 
 const getIconPath = (): string | undefined => {
   const candidates = [
@@ -634,6 +665,65 @@ ipcMain.handle(
   }
 );
 
+// ─── IPC: STT ────────────────────────────────────────────────────────────────
+
+ipcMain.handle(
+  'stt:transcribe',
+  async (_event, audioData: ArrayBuffer) => {
+    console.log(
+      `[IPC] stt:transcribe – ${audioData?.byteLength ?? 0} bytes`
+    );
+
+    const baseUrl = await getBaseUrl();
+    if (!baseUrl) {
+      return { success: false, error: 'Python server not running' };
+    }
+
+    try {
+      const result = await transcribeAudio(
+        Buffer.from(audioData),
+        'recording.webm'
+      );
+      console.log(
+        `[IPC] STT result: "${result.text}" ` +
+        `(${result.duration?.toFixed(1)}s)`
+      );
+      return {
+        success: true,
+        text: result.text,
+        language: result.language,
+        duration: result.duration,
+      };
+    } catch (err) {
+      console.error('[IPC] stt:transcribe error:', err);
+      return { success: false, error: String(err) };
+    }
+  }
+);
+
+// ─── IPC: Steam Auth ──────────────────────────────────────────────────────
+
+ipcMain.handle('steam:isAvailable', () => !!steamClient);
+
+ipcMain.handle('steam:getAuthTicket', async () => {
+  if (!steamClient) return null;
+
+  try {
+    const steamId64 = steamClient.localplayer.getSteamId().steamId64;
+    const ticket = steamClient.auth.getAuthTicketForWebApi(
+      'tirona-clerk-auth'
+    );
+
+    return {
+      ticket: Buffer.from(ticket.getBytes()).toString('hex'),
+      steamId64: String(steamId64),
+    };
+  } catch (err) {
+    console.error('[Steam] Failed to get auth ticket:', err);
+    return null;
+  }
+});
+
 // ─── Steam Detection ─────────────────────────────────────────────────────────
 
 const isSteamBuild = (): boolean => {
@@ -645,26 +735,30 @@ const isSteamBuild = (): boolean => {
   return fs.existsSync(steamDll) || fs.existsSync(steamTxt);
 };
 
-// ─── Vercel Blob Interceptor ─────────────────────────────────────────────────
+// ─── Local Asset Interceptor ────────────────────────────────────────────────
 
-// Kept for v2 – blob interceptor serves local asset-pack files for
-// Vercel Blob URLs, avoiding re-downloads on Steam installs.
-
-// @ts-ignore: kept for v2 (currently disabled)
 let interceptorAssetCount = 0;
+let interceptorStaticReady = false;
 
-// @ts-ignore: kept for v2 (currently disabled)
-const registerBlobInterceptor = (): void => {
+const registerAssetInterceptor = (): void => {
   const assetPackDir = getAssetPackPath();
-  const manifest = loadBundledManifest(assetPackDir);
+  const staticPackDir = getStaticPackPath();
+  const appUrl = getAppUrl().replace(/\/$/, '');
 
-  if (!manifest) {
-    console.log('[Interceptor] No asset-pack manifest found, skipping');
+  const manifest = loadBundledManifest(assetPackDir);
+  const lookup = manifest
+    ? buildBlobLookup(manifest, assetPackDir)
+    : new Map<string, string>();
+  interceptorAssetCount = lookup.size;
+
+  interceptorStaticReady = fs.existsSync(staticPackDir);
+
+  if (interceptorAssetCount === 0 && !interceptorStaticReady) {
+    console.log(
+      '[Interceptor] No asset-pack or static-pack found, skipping'
+    );
     return;
   }
-
-  const lookup = buildBlobLookup(manifest, assetPackDir);
-  interceptorAssetCount = lookup.size;
 
   const ses = session.fromPartition('persist:main');
 
@@ -679,12 +773,27 @@ const registerBlobInterceptor = (): void => {
         const localPath = lookup.get(blobPathname);
 
         if (localPath && fs.existsSync(localPath)) {
-          console.log(`[Interceptor] Disk hit: ${blobPathname}`);
+          console.log(`[Interceptor] Blob hit: ${blobPathname}`);
           const data = fs.readFileSync(localPath);
           return new Response(data, {
             status: 200,
             headers: { 'Content-Type': getMimeType(localPath) },
           });
+        }
+      }
+
+      if (interceptorStaticReady && request.url.startsWith(appUrl)) {
+        const urlPath = new URL(request.url).pathname;
+        if (isStaticAssetPath(urlPath)) {
+          const localPath = resolveStaticAsset(staticPackDir, urlPath);
+          if (localPath) {
+            console.log(`[Interceptor] Static hit: ${urlPath}`);
+            const data = fs.readFileSync(localPath);
+            return new Response(data, {
+              status: 200,
+              headers: { 'Content-Type': getMimeType(localPath) },
+            });
+          }
         }
       }
     } catch (err) {
@@ -696,10 +805,17 @@ const registerBlobInterceptor = (): void => {
     });
   });
 
-  console.log(
-    `[Interceptor] Registered – ${lookup.size} assets available locally ` +
-    `(pack version ${manifest.assetPackVersion})`
-  );
+  const parts: string[] = [];
+  if (interceptorAssetCount > 0) {
+    parts.push(
+      `${lookup.size} blob assets` +
+      (manifest ? ` (pack v${manifest.assetPackVersion})` : '')
+    );
+  }
+  if (interceptorStaticReady) {
+    parts.push('static-pack');
+  }
+  console.log(`[Interceptor] Registered – ${parts.join(' + ')}`);
 };
 
 // ─── App Lifecycle ───────────────────────────────────────────────────────────
@@ -707,15 +823,18 @@ const registerBlobInterceptor = (): void => {
 app.whenReady().then(async () => {
   Menu.setApplicationMenu(null);
   setupDeepLinking();
+  initSteam();
 
   const steam = isSteamBuild();
   console.log(`[Main] Steam build: ${steam}`);
 
-  // v2: Re-enable once the Blob interceptor is tested more thoroughly.
-  // registerBlobInterceptor();
-  // if (interceptorAssetCount > 0) {
-  //   console.log(`[Main] Asset interceptor active (${interceptorAssetCount} files)`);
-  // }
+  registerAssetInterceptor();
+  if (interceptorAssetCount > 0 || interceptorStaticReady) {
+    console.log(
+      `[Main] Asset interceptor active` +
+      ` (${interceptorAssetCount} blob, static=${interceptorStaticReady})`
+    );
+  }
 
   const gpu = detectNvidiaGpu();
   const installed = isServerInstalled();

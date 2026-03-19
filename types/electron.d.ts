@@ -117,6 +117,20 @@ interface ElectronAPI {
 }
 
 // =============================================================================
+// Steam Auth API
+// =============================================================================
+
+interface SteamAuthTicket {
+  ticket: string;
+  steamId64: string;
+}
+
+interface TironaSteamAPI {
+  isAvailable: () => Promise<boolean>;
+  getAuthTicket: () => Promise<SteamAuthTicket | null>;
+}
+
+// =============================================================================
 // Window Global Declarations
 // =============================================================================
 
@@ -125,6 +139,7 @@ interface Window {
   DESKTOP_ENV?: { isElectron: boolean };
   electron?: ElectronAPI;
   localTTS?: LocalTTSAPI;
+  tironaSteam?: TironaSteamAPI;
 }
 
 declare const IN_DESKTOP_ENV: boolean | undefined;

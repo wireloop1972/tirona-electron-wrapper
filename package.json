@@ -13,23 +13,19 @@
   "scripts": {
     "build": "tsc",
     "lint": "eslint src --ext .ts",
-    
     "dev": "npm run build && cross-env APP_ENV=dev electron .",
     "dev:electron": "npm run build && cross-env APP_ENV=dev electron .",
-    
     "start": "npm run build && cross-env APP_ENV=prod electron .",
     "start:prod": "npm run build && cross-env APP_ENV=prod electron .",
-    
     "package": "npm run build && cross-env APP_ENV=prod electron-builder --win --mac",
     "package:win": "npm run build && cross-env APP_ENV=prod electron-builder --win",
     "package:mac": "npm run build && cross-env APP_ENV=prod electron-builder --mac",
     "build:electron": "npm run build && cross-env APP_ENV=prod electron-builder",
-    
     "test:tts": "npm run build && cross-env TTS_TEST=true electron .",
-
     "setup:tts": "powershell -ExecutionPolicy Bypass -File scripts/setup-tts-server.ps1",
     "download:assets": "npx ts-node scripts/download-asset-pack.ts",
-    "package:steam": "npm run build && npm run download:assets && cross-env APP_ENV=prod electron-builder --win --dir"
+    "copy:static": "powershell -ExecutionPolicy Bypass -File scripts/copy-static-pack.ps1",
+    "package:steam": "npm run build && npm run download:assets && npm run copy:static && cross-env APP_ENV=prod electron-builder --win --dir"
   },
   "devDependencies": {
     "@types/node": "^20.10.0",
@@ -43,6 +39,7 @@
     "typescript": "^5.3.0"
   },
   "dependencies": {
-    "electron-updater": "^6.6.2"
+    "electron-updater": "^6.6.2",
+    "steamworks.js": "^0.4.0"
   }
 }

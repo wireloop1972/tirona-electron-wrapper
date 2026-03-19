@@ -248,13 +248,69 @@ if ($LASTEXITCODE -gt 7) {
 
 Write-Ok ("Server copied to " + $OutputFull)
 
+# -- 4b. Install faster-whisper STT addon ------------------------------------
+
+Write-Step "Installing faster-whisper STT addon..."
+
+$PythonExeForPip = Join-Path $OutputFull "python_embedded\python.exe"
+
+if (Test-Path $PythonExeForPip) {
+  Write-Host "  Installing faster-whisper into portable Python..."
+  & $PythonExeForPip -m pip install "faster-whisper>=1.1.0" --no-warn-script-location 2>&1 |
+    ForEach-Object { Write-Host ("  " + $_) -ForegroundColor DarkGray }
+  if ($LASTEXITCODE -ne 0) {
+    Write-Warn "faster-whisper pip install returned non-zero exit code ($LASTEXITCODE)"
+  } else {
+    Write-Ok "faster-whisper installed"
+  }
+} else {
+  Write-Warn ("Portable Python not found at " + $PythonExeForPip + " - skipping pip install")
+}
+
+$SttAddonSrc = Join-Path $ScriptDir "stt-addon"
+
+if (Test-Path $SttAddonSrc) {
+  Write-Host "  Copying STT addon files..."
+  Copy-Item (Join-Path $SttAddonSrc "stt_addon.py")        -Destination $OutputFull -Force
+  Copy-Item (Join-Path $SttAddonSrc "launch_with_stt.py")  -Destination $OutputFull -Force
+  Write-Ok "STT addon files copied"
+} else {
+  Write-Warn ("STT addon source not found at " + $SttAddonSrc + " - skipping")
+}
+
+# Pre-download the medium.en STT model for offline Steam builds
+if (Test-Path $PythonExeForPip) {
+  $SttModelDir = Join-Path $OutputFull "models\stt"
+  Write-Host "  Pre-downloading STT model (medium.en) to $SttModelDir ..."
+
+  & $PythonExeForPip -c @"
+import os, sys
+os.makedirs('./models/stt', exist_ok=True)
+try:
+    from faster_whisper import WhisperModel
+    WhisperModel('medium.en', download_root='./models/stt')
+    print('STT model downloaded successfully')
+except Exception as e:
+    print(f'STT model download failed: {e}', file=sys.stderr)
+    sys.exit(1)
+"@ 2>&1 | ForEach-Object { Write-Host ("  " + $_) -ForegroundColor DarkGray }
+
+  if ($LASTEXITCODE -ne 0) {
+    Write-Warn "STT model pre-download failed (will download on first use)"
+  } else {
+    Write-Ok "STT model pre-downloaded"
+  }
+}
+
 # -- 5. Verify ----------------------------------------------------------------
 
 Write-Step "Verifying..."
 
-$PythonExe = Join-Path $OutputFull "python_embedded\python.exe"
-$ServerPy  = Join-Path $OutputFull "server.py"
-$ConfigOut = Join-Path $OutputFull "config.yaml"
+$PythonExe    = Join-Path $OutputFull "python_embedded\python.exe"
+$ServerPy     = Join-Path $OutputFull "server.py"
+$ConfigOut    = Join-Path $OutputFull "config.yaml"
+$LaunchStt    = Join-Path $OutputFull "launch_with_stt.py"
+$SttAddonPy   = Join-Path $OutputFull "stt_addon.py"
 
 $allGood = $true
 foreach ($f in @($PythonExe, $ServerPy, $ConfigOut)) {
@@ -263,6 +319,14 @@ foreach ($f in @($PythonExe, $ServerPy, $ConfigOut)) {
   } else {
     Write-Err ("  MISSING  " + $f)
     $allGood = $false
+  }
+}
+
+foreach ($f in @($LaunchStt, $SttAddonPy)) {
+  if (Test-Path $f) {
+    Write-Host ("  OK  " + $f)
+  } else {
+    Write-Warn ("  MISSING (STT)  " + $f)
   }
 }
 
@@ -280,8 +344,9 @@ Write-Host "============================================" -ForegroundColor Green
 Write-Host ""
 Write-Host "To test manually:"
 Write-Host ("  cd " + $OutputFull)
-Write-Host '  .\python_embedded\python.exe server.py'
+Write-Host '  .\python_embedded\python.exe launch_with_stt.py'
 Write-Host ("  curl http://127.0.0.1:" + $Port + "/api/ui/initial-data")
+Write-Host ("  curl -X POST http://127.0.0.1:" + $Port + "/stt -F audio=@test.wav")
 Write-Host ""
 Write-Host "To run in Electron:"
 Write-Host '  npm run test:tts'

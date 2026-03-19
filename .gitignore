@@ -37,6 +37,9 @@ models/
 # Asset pack (downloaded at build time, too large for git)
 asset-pack/
 
+# Static pack (copied from Battlemap public/ at build time, too large for git)
+static-pack/
+
 # Steam build output
 steam_output/
 steam_appid.txt

@@ -10,6 +10,7 @@ files:
   - dist/**/*
   - config.json
   - package.json
+  - steam_appid.txt
   - src/splash.html
   - assets/**/*
 
@@ -28,6 +29,12 @@ extraResources:
   # Build with:  npm run download:assets
   - from: asset-pack
     to: asset-pack
+    filter:
+      - "**/*"
+  # Static assets from the Next.js public/ folder (PBR textures, HDRIs).
+  # Build with:  npm run copy:static
+  - from: static-pack
+    to: static-pack
     filter:
       - "**/*"
 

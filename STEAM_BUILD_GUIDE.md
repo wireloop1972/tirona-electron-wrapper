@@ -12,6 +12,7 @@ Reference for building, packaging, and uploading to Steam.
 | Code Depot | **4503861** "Tirona Rebirth Content" |
 | Assets Depot | **4503862** "Tirona Rebirth Assets" |
 | TTS Depot | **4503863** "Tirona Rebirth TTS" |
+| Static Depot | **4503864** "Tirona Rebirth Static Pack" |
 | Steam Username | `wireloopas` |
 | Steamworks SDK | `C:\SteamworksSDK\sdk\tools\ContentBuilder` |
 | Build Output | `release\win-unpacked\` |
@@ -60,14 +61,29 @@ npm run download:assets
 
 Then re-run electron-builder so the new asset-pack is included.
 
-### 1d. One-command build
+### 1d. (Optional) Copy static pack from Battlemap
+
+Only needed if PBR textures, HDRIs, or ground textures have been added/changed
+in the Battlemap `public/` folder:
+
+```powershell
+npm run copy:static
+```
+
+Defaults to `../Battlemap` as the source. Override with:
+
+```powershell
+.\scripts\copy-static-pack.ps1 -BattlemapPath "C:\wireloop\Tirona\Battlemap"
+```
+
+### 1e. One-command build
 
 ```powershell
 npm run package:steam
 ```
 
-This runs `tsc` + `download:assets` + `electron-builder --win --dir` in
-sequence.
+This runs `tsc` + `download:assets` + `copy:static` + `electron-builder --win --dir`
+in sequence.
 
 ---
 
@@ -81,7 +97,7 @@ sequence.
 ```
 
 This copies `release\win-unpacked\` into the ContentBuilder folder structure,
-splitting it into three depot folders. Review the sizes in the output.
+splitting it into four depot folders. Review the sizes in the output.
 
 ### 2b. Prepare and upload in one step
 
@@ -105,8 +121,8 @@ Steam clients auto-update within minutes.
 
 ## 3. Depot Architecture
 
-The install is split into three depots so code patches don't force re-download
-of multi-gigabyte assets or the TTS server.
+The install is split into four depots so code patches don't force re-download
+of multi-gigabyte assets, the TTS server, or static textures.
 
 ```
 Steam Install Directory/
@@ -118,6 +134,11 @@ Steam Install Directory/
 │   ├── asset-pack/                     ─┐ Depot 4503862 (Assets)
 │   │   ├── manifest.json                │ ~1.5 GB
 │   │   └── *.glb, *.hdr                ─┘
+│   ├── static-pack/                    ─┐ Depot 4503864 (Static)
+│   │   ├── textures/pbr/               │ ~490 MB
+│   │   ├── textures/skybox/            │ PBR textures, HDRIs,
+│   │   ├── textures/ground/            │ ground textures
+│   │   └── hdr/                        ─┘
 │   └── tts-server/                     ─┐ Depot 4503863 (TTS)
 │       ├── python/                      │ ~5.4 GB
 │       ├── server.py                    │
@@ -131,10 +152,11 @@ Steam Install Directory/
 | JS/TS code change, bug fix, UI tweak | Code only (4503861) |
 | New GLB models or HDRI added | Assets only (4503862) |
 | TTS server update, new voices | TTS only (4503863) |
+| PBR textures or skybox HDRIs changed | Static only (4503864) |
 | Electron version upgrade | Code (4503861) |
-| Everything | All three |
+| Everything | All four |
 
-The prepare script always copies all three, but Steam's delta patching means
+The prepare script always copies all four, but Steam's delta patching means
 only changed chunks are downloaded by players. Keeping depot boundaries stable
 is key -- don't move files between depots.
 
@@ -182,7 +204,7 @@ Set in **Installation > General Installation**:
 
 ### Depots Configuration
 
-Set in **Installation > Depots**. All three depots should have:
+Set in **Installation > Depots**. All four depots should have:
 
 | Field | Value |
 |---|---|
@@ -194,7 +216,7 @@ Set in **Installation > Depots**. All three depots should have:
 
 ### Packages
 
-All three depots must be included in all three packages:
+All four depots must be included in all packages:
 
 - **Tirona Rebirth Developer Comp** (1571237) -- auto-granted to publisher
 - **Tirona Rebirth for Beta Testing** (1571238)
@@ -213,16 +235,19 @@ electronwrapper/
 │   ├── app_build.vdf             # Top-level build script (references all depots)
 │   ├── depot_code.vdf            # Depot 4503861
 │   ├── depot_content.vdf         # Depot 4503862
-│   └── depot_tts.vdf             # Depot 4503863
+│   ├── depot_tts.vdf             # Depot 4503863
+│   └── depot_static.vdf          # Depot 4503864
 ├── scripts/
 │   ├── prepare-steam-upload.ps1  # Copies build output -> ContentBuilder, uploads
 │   ├── download-asset-pack.ts    # Downloads assets from Vercel for bundling
+│   ├── copy-static-pack.ps1     # Copies PBR/HDRI from Battlemap public/
 │   └── setup-tts-server.ps1     # Sets up the TTS Python environment
 ├── electron-builder.yml          # Packaging config (single source of truth)
 ├── config.json                   # App URLs (must be inside ASAR, not extraFiles)
 ├── release/
 │   └── win-unpacked/             # electron-builder output (what gets uploaded)
 ├── asset-pack/                   # Downloaded assets (gitignored)
+├── static-pack/                  # Battlemap public/ textures (gitignored)
 └── tts-server/                   # Bundled Python + Chatterbox (gitignored)
 ```
 

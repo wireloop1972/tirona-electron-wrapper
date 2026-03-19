@@ -51,6 +51,26 @@ export const getAssetPackPath = (): string => {
     : path.join(__dirname, '..', 'asset-pack');
 };
 
+export const getStaticPackPath = (): string => {
+  return app.isPackaged
+    ? path.join(process.resourcesPath, 'static-pack')
+    : path.join(__dirname, '..', 'static-pack');
+};
+
+const STATIC_PATH_PREFIXES = ['/textures/', '/hdr/'];
+
+export const isStaticAssetPath = (urlPath: string): boolean => {
+  return STATIC_PATH_PREFIXES.some((p) => urlPath.startsWith(p));
+};
+
+export const resolveStaticAsset = (
+  staticPackDir: string,
+  urlPath: string
+): string | null => {
+  const localPath = path.join(staticPackDir, urlPath);
+  return fs.existsSync(localPath) ? localPath : null;
+};
+
 export const loadBundledManifest = (
   assetPackDir?: string
 ): AssetManifest | null => {
