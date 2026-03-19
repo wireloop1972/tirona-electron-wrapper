@@ -709,14 +709,19 @@ ipcMain.handle('steam:getAuthTicket', async () => {
   if (!steamClient) return null;
 
   try {
-    const steamId64 = steamClient.localplayer.getSteamId().steamId64;
-    const ticket = steamClient.auth.getAuthTicketForWebApi(
+    const sid = steamClient.localplayer.getSteamId();
+    const steamId64 = sid.steamId64.toString();
+    console.log('[Steam] SteamID64:', steamId64);
+
+    const ticket = await steamClient.auth.getAuthTicketForWebApi(
       'tirona-clerk-auth'
     );
+    const ticketHex = Buffer.from(ticket.getBytes()).toString('hex');
+    console.log('[Steam] Got auth ticket, length:', ticketHex.length);
 
     return {
-      ticket: Buffer.from(ticket.getBytes()).toString('hex'),
-      steamId64: String(steamId64),
+      ticket: ticketHex,
+      steamId64,
     };
   } catch (err) {
     console.error('[Steam] Failed to get auth ticket:', err);
