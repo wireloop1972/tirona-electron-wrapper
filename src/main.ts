@@ -714,7 +714,7 @@ ipcMain.handle('steam:getAuthTicket', async () => {
     console.log('[Steam] SteamID64:', steamId64);
 
     const ticket = await steamClient.auth.getAuthTicketForWebApi(
-      'tirona-clerk-auth'
+      'tirona-supabase-auth'
     );
     const ticketHex = Buffer.from(ticket.getBytes()).toString('hex');
     console.log('[Steam] Got auth ticket, length:', ticketHex.length);
