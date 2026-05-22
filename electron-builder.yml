@@ -10,10 +10,14 @@ files:
   - dist/**/*
   - config.json
   - package.json
-  - steam_appid.txt
   - src/splash.html
   - src/startup-menu.html
   - assets/**/*
+
+# steam_appid.txt must sit next to the executable (not inside app.asar) so
+# the Steam client and isSteamBuild() in main.ts can find it.
+extraFiles:
+  - steam_appid.txt
 
 # Chatterbox Turbo TTS server (Portable Mode – bundled Python + deps)
 # Build with:  npm run setup:tts
