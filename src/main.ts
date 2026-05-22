@@ -187,7 +187,7 @@ const saveSettings = (settings: TironaSettings): void => {
 
 // ─── Splash ──────────────────────────────────────────────────────────────────
 
-const createSplashWindow = (): void => {
+const createSplashWindow = (ttsEnabled: boolean): void => {
   splashWindow = new BrowserWindow({
     fullscreen: true,
     frame: false,
@@ -206,11 +206,18 @@ const createSplashWindow = (): void => {
   splashWindow.setMenu(null);
 
   const videoPath = path.join(__dirname, '..', 'assets', 'TironaFading.mp4');
-  if (!fs.existsSync(videoPath)) {
-    console.warn('Splash video not found, skipping to main window');
+  // With no intro video and no TTS narration to wait for, there is nothing
+  // for the splash to show - go straight to the game.
+  if (!fs.existsSync(videoPath) && !ttsEnabled) {
+    console.warn('No splash video and TTS disabled - skipping to main window');
     splashWindow.close();
     showMainWindow();
     return;
+  }
+  if (!fs.existsSync(videoPath)) {
+    console.warn(
+      'Splash video not found - splash will show the voice loading screen'
+    );
   }
 
   splashWindow.loadFile(
@@ -1021,20 +1028,16 @@ app.whenReady().then(async () => {
     // Pre-game configuration: let the player opt into Voice Synthesis
     // before the intro video plays. Voice Synthesis is off by default.
     const ttsEnabled = await showStartupMenu();
+    const startTts = ttsEnabled && ttsAvailable;
     console.log(
       `[Main] Startup menu closed - Voice Synthesis ${
         ttsEnabled ? 'ENABLED' : 'disabled'
-      } by player`
+      } by player (will start: ${startTts})`
     );
 
-    createSplashWindow();
+    createSplashWindow(startTts);
 
-    if (
-      ttsEnabled &&
-      ttsAvailable &&
-      splashWindow &&
-      !splashWindow.isDestroyed()
-    ) {
+    if (startTts && splashWindow && !splashWindow.isDestroyed()) {
       splashWindow.webContents.once('did-finish-load', () => {
         splashWindow?.webContents.send('splash:tts-needed');
       });

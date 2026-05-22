@@ -314,6 +314,17 @@ except Exception as e:
   }
 }
 
+# -- 4a. Disable the server's browser auto-open -------------------------------
+# The devnen server opens its web UI in a browser on startup. That is dev-only
+# behaviour - the server runs embedded in the Tirona app, not standalone.
+$BrowserPatchPy = Join-Path $OutputFull "server.py"
+if (Test-Path $BrowserPatchPy) {
+  Write-Step "Disabling browser auto-open in server.py..."
+  $bp = Get-Content $BrowserPatchPy -Raw
+  $bp = $bp -replace 'browser_thread\.start\(\)', 'pass  # browser auto-open disabled for Tirona'
+  [System.IO.File]::WriteAllText($BrowserPatchPy, $bp)
+}
+
 # -- 4b. Pre-download TTS model into hf_cache (offline Steam bundle) ----------
 # Run the server once so it downloads the Chatterbox model into a cache
 # bundled inside tts-server. The shipped app loads from here with
