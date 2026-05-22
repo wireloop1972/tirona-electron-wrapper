@@ -283,17 +283,29 @@ if (Test-Path $PythonExeForPip) {
   $SttModelDir = Join-Path $OutputFull "models\stt"
   Write-Host "  Pre-downloading STT model (medium.en) to $SttModelDir ..."
 
-  & $PythonExeForPip -c @"
+  # Use non-terminating error handling: the downloader prints harmless
+  # warnings (e.g. the hf_xet notice) to stderr, which would otherwise abort
+  # the whole script under $ErrorActionPreference = 'Stop'.
+  $prevEAP = $ErrorActionPreference
+  $ErrorActionPreference = 'Continue'
+  try {
+    & $PythonExeForPip -c @"
 import os, sys
-os.makedirs('./models/stt', exist_ok=True)
 try:
     from faster_whisper import WhisperModel
-    WhisperModel('medium.en', download_root='./models/stt')
+    d = r'$SttModelDir'
+    os.makedirs(d, exist_ok=True)
+    WhisperModel('medium.en', download_root=d)
     print('STT model downloaded successfully')
 except Exception as e:
     print(f'STT model download failed: {e}', file=sys.stderr)
     sys.exit(1)
 "@ 2>&1 | ForEach-Object { Write-Host ("  " + $_) -ForegroundColor DarkGray }
+  } catch {
+    Write-Warn ("STT model pre-download error: " + $_)
+  } finally {
+    $ErrorActionPreference = $prevEAP
+  }
 
   if ($LASTEXITCODE -ne 0) {
     Write-Warn "STT model pre-download failed (will download on first use)"
