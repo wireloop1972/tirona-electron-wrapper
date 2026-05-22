@@ -933,6 +933,59 @@ const registerAssetInterceptor = (): void => {
   console.log(`[Interceptor] Registered – ${parts.join(' + ')}`);
 };
 
+// ─── Narrator Intro (TTS warm-up + test) ─────────────────────────────────────
+
+const NARRATOR_INTRO_TEXT =
+  'Can you hear me? … Good. I am the Narrator. If it took me an awkwardly ' +
+  'long time to arrive, you might want to mute me entirely—or consider ' +
+  'upgrading that relic you call a graphics card. Either way, we’ll manage. ' +
+  'Welcome to Tirona, where your choices matter, your luck is questionable, ' +
+  'and I will be with you every step of the way. Let’s begin.';
+
+/**
+ * Generates the Narrator intro line. This is the first TTS request after the
+ * model loads: it warms up Chatterbox (the first generation compiles CUDA
+ * kernels) and serves as an audible test for the player. Returns a base64
+ * WAV data URL, or null on failure.
+ */
+const generateNarratorIntro = async (
+  voice: string
+): Promise<string | null> => {
+  const baseUrl = await getBaseUrl();
+  if (!baseUrl) return null;
+
+  try {
+    const body: Record<string, string> = {
+      model: 'turbo',
+      input: NARRATOR_INTRO_TEXT,
+      response_format: 'wav',
+    };
+    if (voice && voice !== 'default') {
+      body.voice = voice.endsWith('.wav') ? voice : `${voice}.wav`;
+    }
+
+    console.log('[Narrator] Generating intro line (warm-up + test)...');
+    const response = await fetch(`${baseUrl}/v1/audio/speech`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+      signal: AbortSignal.timeout(120_000),
+    });
+
+    if (!response.ok) {
+      console.error(`[Narrator] HTTP ${response.status}`);
+      return null;
+    }
+
+    const buf = Buffer.from(await response.arrayBuffer());
+    console.log(`[Narrator] Intro generated – ${buf.length} bytes`);
+    return `data:audio/wav;base64,${buf.toString('base64')}`;
+  } catch (err) {
+    console.error('[Narrator] Failed to generate intro:', err);
+    return null;
+  }
+};
+
 // ─── App Lifecycle ───────────────────────────────────────────────────────────
 
 app.whenReady().then(async () => {
@@ -988,13 +1041,20 @@ app.whenReady().then(async () => {
 
       console.log('[Main] Starting TTS server during splash...');
       startServer()
-        .then((config) => {
+        .then(async (config) => {
           console.log('[Main] TTS server ready during splash');
-          if (splashWindow && !splashWindow.isDestroyed()) {
-            splashWindow.webContents.send('splash:tts-ready');
-          }
           if (mainWindow && !mainWindow.isDestroyed()) {
             mainWindow.webContents.send('tts:ready', config);
+          }
+          // First generation after model load: warm up Chatterbox and
+          // play the Narrator intro as an audible test on the splash.
+          const audioUrl = await generateNarratorIntro(config.defaultVoice);
+          if (splashWindow && !splashWindow.isDestroyed()) {
+            if (audioUrl) {
+              splashWindow.webContents.send('splash:narrator-audio', audioUrl);
+            } else {
+              splashWindow.webContents.send('splash:tts-ready');
+            }
           }
         })
         .catch((err) => {

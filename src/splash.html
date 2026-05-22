@@ -112,17 +112,50 @@
     </div>
   </div>
 
+  <audio id="narrator-audio"></audio>
+
   <script>
     const video = document.getElementById('splash-video');
     const skipBtn = document.getElementById('skip-button');
     const ttsLoading = document.getElementById('tts-loading');
+    const loadingText = ttsLoading.querySelector('.loading-text');
+    const loadingSub = ttsLoading.querySelector('.loading-sub');
+    const narratorAudio = document.getElementById('narrator-audio');
 
     let videoEnded = false;
-    let ttsReady = false;
     let ttsNeeded = false;
+    let narratorUrl = null;
+    let ttsFailed = false;
+    let narratorStarted = false;
+    let finished = false;
 
     const finish = () => {
+      if (finished) return;
+      finished = true;
+      try { narratorAudio.pause(); } catch (e) { /* ignore */ }
       if (window.splashAPI) window.splashAPI.splashFinished();
+    };
+
+    const playNarrator = () => {
+      if (narratorStarted || finished) return;
+      narratorStarted = true;
+      loadingText.textContent = 'The Narrator';
+      loadingSub.textContent = 'Press Esc to skip';
+      narratorAudio.src = narratorUrl;
+      narratorAudio.addEventListener('ended', finish);
+      narratorAudio.addEventListener('error', finish);
+      const p = narratorAudio.play();
+      if (p && p.catch) p.catch(() => finish());
+    };
+
+    /* Decide what happens once the video has ended and TTS state is known. */
+    const settle = () => {
+      if (finished || !videoEnded) return;
+      if (!ttsNeeded) { finish(); return; }
+      if (narratorStarted) return;
+      if (narratorUrl) { playNarrator(); return; }
+      if (ttsFailed) { finish(); return; }
+      /* else: still generating the Narrator intro — overlay stays visible */
     };
 
     const onVideoEnd = () => {
@@ -130,12 +163,11 @@
       videoEnded = true;
       video.style.display = 'none';
       skipBtn.style.display = 'none';
-
-      if (ttsNeeded && !ttsReady) {
+      if (ttsNeeded) {
+        loadingSub.textContent = 'Press Esc to skip';
         ttsLoading.classList.add('visible');
-      } else {
-        finish();
       }
+      settle();
     };
 
     video.addEventListener('ended', onVideoEnd);
@@ -144,7 +176,10 @@
     });
     skipBtn.addEventListener('click', onVideoEnd);
     document.addEventListener('keydown', (e) => {
-      if (e.key === 'Escape') onVideoEnd();
+      if (e.key !== 'Escape') return;
+      /* Esc skips the video, the TTS wait, and the Narrator intro. */
+      if (!videoEnded) onVideoEnd();
+      else finish();
     });
     document.addEventListener('contextmenu', (e) => e.preventDefault());
 
@@ -153,9 +188,15 @@
         ttsNeeded = true;
       });
 
+      window.splashAPI.onNarratorAudio((url) => {
+        narratorUrl = url;
+        settle();
+      });
+
       window.splashAPI.onTTSReady(() => {
-        ttsReady = true;
-        if (videoEnded) finish();
+        /* Sent only when TTS produced no audio (failure) — just proceed. */
+        ttsFailed = true;
+        settle();
       });
     }
   </script>
