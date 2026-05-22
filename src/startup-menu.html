@@ -1,0 +1,321 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta
+    http-equiv="Content-Security-Policy"
+    content="default-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; script-src 'self' 'unsafe-inline';"
+  />
+  <title>Tirona Rebirth — Configuration</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+
+    :root {
+      --bg-deep: #1a130e;
+      --bg-panel: #221913;
+      --bg-row: #2b2017;
+      --gold: #f0c878;
+      --gold-dim: #d4a84b;
+      --gold-muted: #b89252;
+      --text: #e5e5e5;
+      --text-dim: #9c8f7e;
+      --border: rgba(240, 200, 120, 0.18);
+      --good: #6ec07a;
+      --warn: #e0a64b;
+      --bad: #d9655a;
+    }
+
+    html, body { height: 100%; }
+
+    body {
+      background: linear-gradient(160deg, #2d1f14 0%, var(--bg-deep) 55%);
+      color: var(--text);
+      font-family: 'Segoe UI', Tahoma, sans-serif;
+      overflow-x: hidden;
+      overflow-y: auto;
+      -webkit-app-region: drag;
+      display: flex;
+      flex-direction: column;
+      min-height: 100vh;
+    }
+
+    button, input, label, .panel { -webkit-app-region: no-drag; }
+
+    .container {
+      max-width: 620px;
+      width: 100%;
+      margin: 0 auto;
+      padding: 34px 32px 28px;
+      display: flex;
+      flex-direction: column;
+      flex: 1;
+    }
+
+    /* Header */
+    .header { text-align: center; margin-bottom: 24px; }
+    .header img {
+      width: 66px; height: 66px; margin-bottom: 10px;
+      filter: drop-shadow(0 0 12px rgba(240, 200, 120, 0.35));
+    }
+    .header h1 {
+      font-family: 'Cinzel', Georgia, 'Times New Roman', serif;
+      font-size: 25px; font-weight: 600; color: var(--gold);
+      letter-spacing: 0.06em;
+    }
+    .header .sub {
+      font-size: 12px; color: var(--text-dim);
+      letter-spacing: 0.22em; text-transform: uppercase; margin-top: 4px;
+    }
+
+    /* Panel */
+    .panel {
+      background: var(--bg-panel);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 22px;
+      margin-bottom: 18px;
+    }
+    .panel h2 {
+      font-family: 'Cinzel', Georgia, serif;
+      font-size: 16px; font-weight: 600; color: var(--gold);
+      margin-bottom: 16px; display: flex; align-items: center; gap: 9px;
+    }
+
+    .status-box {
+      background: var(--bg-row);
+      border-radius: 8px;
+      padding: 6px 14px;
+      margin-bottom: 16px;
+    }
+    .row {
+      display: flex; justify-content: space-between; align-items: center;
+      padding: 9px 0; font-size: 13.5px;
+      border-bottom: 1px solid rgba(240, 200, 120, 0.08);
+    }
+    .row:last-child { border-bottom: none; }
+    .row .label { color: var(--text-dim); }
+    .row .value { font-weight: 600; }
+    .v-good { color: var(--good); }
+    .v-warn { color: var(--warn); }
+    .v-bad  { color: var(--bad); }
+    .v-dim  { color: var(--text-dim); }
+
+    .verdict-detail {
+      font-size: 12.5px; color: var(--text-dim);
+      line-height: 1.55; margin: 10px 2px 14px;
+    }
+
+    .specs {
+      list-style: none;
+      border-top: 1px solid var(--border);
+      padding-top: 13px;
+    }
+    .specs li {
+      position: relative; padding-left: 16px; margin-bottom: 7px;
+      font-size: 12.5px; color: var(--text-dim); line-height: 1.5;
+    }
+    .specs li:last-child { margin-bottom: 0; }
+    .specs li::before {
+      content: "◆"; position: absolute; left: 0;
+      color: var(--gold-muted); font-size: 9px; top: 3px;
+    }
+    .specs strong { color: var(--text); font-weight: 600; }
+
+    /* Toggle */
+    .toggle-row {
+      display: flex; align-items: center; gap: 14px;
+      margin-top: 18px; padding-top: 16px;
+      border-top: 1px solid var(--border);
+    }
+    .switch { position: relative; width: 50px; height: 27px; flex-shrink: 0; }
+    .switch input { opacity: 0; width: 0; height: 0; }
+    .slider {
+      position: absolute; inset: 0; cursor: pointer;
+      background: var(--bg-row); border: 1px solid var(--border);
+      border-radius: 27px; transition: 0.25s;
+    }
+    .slider::before {
+      content: ""; position: absolute; height: 19px; width: 19px;
+      left: 3px; bottom: 3px; background: var(--text-dim);
+      border-radius: 50%; transition: 0.25s;
+    }
+    .switch input:checked + .slider {
+      background: var(--gold); border-color: var(--gold);
+    }
+    .switch input:checked + .slider::before {
+      transform: translateX(23px); background: var(--bg-deep);
+    }
+    .switch input:disabled + .slider { opacity: 0.45; cursor: not-allowed; }
+    .toggle-text { display: flex; flex-direction: column; gap: 2px; }
+    .toggle-text .t-title { font-size: 14.5px; font-weight: 600; color: var(--text); }
+    .toggle-text .t-note { font-size: 11.5px; color: var(--text-dim); }
+
+    /* Footer */
+    .footer { margin-top: auto; padding-top: 14px; text-align: center; }
+    .btn-continue {
+      background: linear-gradient(180deg, var(--gold) 0%, var(--gold-dim) 100%);
+      color: var(--bg-deep);
+      font-family: 'Cinzel', Georgia, serif;
+      font-size: 15px; font-weight: 600; letter-spacing: 0.05em;
+      border: none; border-radius: 7px;
+      padding: 13px 54px; cursor: pointer;
+      transition: opacity 0.15s, transform 0.1s;
+    }
+    .btn-continue:hover { opacity: 0.9; }
+    .btn-continue:active { transform: translateY(1px); }
+    .footer .hint { margin-top: 9px; font-size: 11px; color: var(--text-dim); }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="header">
+      <img src="../assets/tironaicon.png" alt="Tirona" />
+      <h1>Tirona Rebirth</h1>
+      <div class="sub">Configuration</div>
+    </div>
+
+    <div class="panel">
+      <h2>&#127908; Voice Synthesis</h2>
+
+      <div class="status-box">
+        <div class="row">
+          <span class="label">GPU detected</span>
+          <span class="value v-dim" id="gpu-name">Detecting…</span>
+        </div>
+        <div class="row">
+          <span class="label">Video memory</span>
+          <span class="value v-dim" id="gpu-vram">—</span>
+        </div>
+        <div class="row">
+          <span class="label">Hardware recommendation</span>
+          <span class="value v-dim" id="hw-verdict">Evaluating…</span>
+        </div>
+      </div>
+
+      <p class="verdict-detail" id="hw-detail">
+        Checking your hardware against voice-synthesis requirements…
+      </p>
+
+      <ul class="specs">
+        <li><strong>Recommended:</strong> NVIDIA RTX GPU with 6&nbsp;GB+ VRAM.</li>
+        <li><strong>Minimum:</strong> NVIDIA (CUDA) GPU with 4&nbsp;GB VRAM.</li>
+        <li><strong>Not supported:</strong> AMD / Intel GPUs and CPU-only — voice
+          synthesis is NVIDIA/CUDA only.</li>
+        <li>The voice model loads into GPU memory; first launch can take
+          1–3&nbsp;minutes.</li>
+      </ul>
+
+      <div class="toggle-row">
+        <label class="switch">
+          <input type="checkbox" id="tts-toggle" disabled />
+          <span class="slider"></span>
+        </label>
+        <div class="toggle-text">
+          <span class="t-title">Enable Voice Synthesis</span>
+          <span class="t-note" id="toggle-note">Off by default. Turn on to narrate the game with AI voice.</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="footer">
+      <button class="btn-continue" id="continue-btn">Continue</button>
+      <div class="hint">You can change this the next time you launch Tirona.</div>
+    </div>
+  </div>
+
+  <script>
+    const el = (id) => document.getElementById(id);
+
+    function evaluateHardware(gpu, serverInstalled) {
+      if (!gpu || !gpu.available) {
+        return {
+          label: 'Not Available', cls: 'v-bad', canEnable: false,
+          detail: 'No NVIDIA GPU detected. Voice synthesis requires a ' +
+                  'CUDA-capable NVIDIA GPU and cannot be enabled on this machine.',
+        };
+      }
+      if (!serverInstalled) {
+        return {
+          label: 'Not Installed', cls: 'v-bad', canEnable: false,
+          detail: 'The voice-synthesis engine is not installed in this build, ' +
+                  'so it cannot be enabled.',
+        };
+      }
+      const vram = gpu.vramMB || 0;
+      if (vram >= 6000) {
+        return {
+          label: 'Recommended', cls: 'v-good', canEnable: true,
+          detail: 'Your GPU has ' + vram + ' MB VRAM, comfortably above the ' +
+                  '6 GB recommendation. Voice synthesis should run smoothly.',
+        };
+      }
+      if (vram >= 4000) {
+        return {
+          label: 'Marginal', cls: 'v-warn', canEnable: true,
+          detail: 'Your GPU has ' + vram + ' MB VRAM. Voice synthesis will ' +
+                  'work, but generation may be slower than recommended.',
+        };
+      }
+      return {
+        label: 'Not Recommended', cls: 'v-bad', canEnable: true,
+        detail: 'Your GPU reports ' + vram + ' MB VRAM, below the 4 GB ' +
+                'minimum. You can still enable it, but performance may suffer.',
+      };
+    }
+
+    let ttsEnabledChoice = false;
+
+    async function init() {
+      let info;
+      try {
+        info = await window.startupAPI.getInfo();
+      } catch (e) {
+        info = { gpu: { available: false }, serverInstalled: false, ttsEnabled: false };
+      }
+
+      const gpu = info.gpu || { available: false };
+
+      el('gpu-name').textContent = gpu.available
+        ? (gpu.gpuName || 'NVIDIA GPU')
+        : 'None detected';
+      el('gpu-name').className = 'value ' + (gpu.available ? 'v-good' : 'v-bad');
+
+      el('gpu-vram').textContent =
+        gpu.available && gpu.vramMB ? gpu.vramMB + ' MB' : '—';
+      el('gpu-vram').className = 'value v-dim';
+
+      const verdict = evaluateHardware(gpu, info.serverInstalled);
+      el('hw-verdict').textContent = verdict.label;
+      el('hw-verdict').className = 'value ' + verdict.cls;
+      el('hw-detail').textContent = verdict.detail;
+
+      const toggle = el('tts-toggle');
+      if (verdict.canEnable) {
+        toggle.disabled = false;
+        // Default off; reflect the player's last saved choice if any.
+        toggle.checked = info.ttsEnabled === true;
+      } else {
+        toggle.disabled = true;
+        toggle.checked = false;
+        el('toggle-note').textContent =
+          'Unavailable on this machine — see the recommendation above.';
+      }
+      ttsEnabledChoice = toggle.checked;
+      toggle.addEventListener('change', () => {
+        ttsEnabledChoice = toggle.checked;
+      });
+    }
+
+    el('continue-btn').addEventListener('click', async () => {
+      el('continue-btn').disabled = true;
+      try {
+        await window.startupAPI.continue(ttsEnabledChoice);
+      } catch (e) {
+        el('continue-btn').disabled = false;
+      }
+    });
+
+    init();
+  </script>
+</body>
+</html>

@@ -12,6 +12,7 @@ files:
   - package.json
   - steam_appid.txt
   - src/splash.html
+  - src/startup-menu.html
   - assets/**/*
 
 # Chatterbox Turbo TTS server (Portable Mode – bundled Python + deps)

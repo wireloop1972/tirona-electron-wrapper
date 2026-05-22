@@ -44,6 +44,8 @@ interface AppConfig {
 
 let mainWindow: BrowserWindow | null = null;
 let splashWindow: BrowserWindow | null = null;
+let startupMenuWindow: BrowserWindow | null = null;
+let resolveStartupMenu: ((ttsEnabled: boolean) => void) | null = null;
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 let steamClient: any = null;
@@ -150,6 +152,37 @@ const waitForServer = async (
   }
   console.error('Server did not become ready in time');
   return false;
+};
+
+// ─── Player Settings ─────────────────────────────────────────────────────────
+
+interface TironaSettings {
+  ttsEnabled: boolean;
+}
+
+const getSettingsPath = (): string =>
+  path.join(app.getPath('userData'), 'tirona-settings.json');
+
+const loadSettings = (): TironaSettings => {
+  try {
+    const raw = fs.readFileSync(getSettingsPath(), 'utf-8');
+    const parsed = JSON.parse(raw) as Partial<TironaSettings>;
+    return { ttsEnabled: parsed.ttsEnabled === true };
+  } catch {
+    return { ttsEnabled: false };
+  }
+};
+
+const saveSettings = (settings: TironaSettings): void => {
+  try {
+    fs.writeFileSync(
+      getSettingsPath(),
+      JSON.stringify(settings, null, 2),
+      'utf-8'
+    );
+  } catch (err) {
+    console.error('[Main] Failed to save settings:', err);
+  }
 };
 
 // ─── Splash ──────────────────────────────────────────────────────────────────
@@ -457,6 +490,61 @@ const showMainWindow = (): void => {
   }
 };
 
+// ─── Startup Configuration Menu ──────────────────────────────────────────────
+
+/**
+ * Shows the pre-game configuration window (Voice Synthesis opt-in) and
+ * resolves with the player's TTS choice once they click Continue. Shown
+ * before the intro video on every launch. Voice Synthesis is off by default.
+ */
+const showStartupMenu = (): Promise<boolean> => {
+  return new Promise((resolve) => {
+    resolveStartupMenu = resolve;
+
+    const { width, height } = screen.getPrimaryDisplay().workAreaSize;
+    const w = Math.min(700, width);
+    const h = Math.min(800, height);
+
+    startupMenuWindow = new BrowserWindow({
+      width: w,
+      height: h,
+      x: Math.floor((width - w) / 2),
+      y: Math.floor((height - h) / 2),
+      frame: false,
+      resizable: false,
+      backgroundColor: '#1a130e',
+      title: 'Tirona Rebirth',
+      icon: getIconPath(),
+      webPreferences: {
+        nodeIntegration: false,
+        contextIsolation: true,
+        preload: path.join(__dirname, 'startup-menu-preload.js'),
+      },
+      show: false,
+    });
+
+    startupMenuWindow.setMenu(null);
+    startupMenuWindow.loadFile(
+      path.join(__dirname, '..', 'src', 'startup-menu.html')
+    );
+
+    startupMenuWindow.once('ready-to-show', () => {
+      startupMenuWindow?.show();
+      startupMenuWindow?.focus();
+    });
+
+    startupMenuWindow.on('closed', () => {
+      startupMenuWindow = null;
+      // Closed without an explicit choice -> default to TTS disabled.
+      if (resolveStartupMenu) {
+        const r = resolveStartupMenu;
+        resolveStartupMenu = null;
+        r(false);
+      }
+    });
+  });
+};
+
 const setupDeepLinking = (): void => {
   if (process.defaultApp) {
     if (process.argv.length >= 2) {
@@ -523,6 +611,28 @@ ipcMain.handle('window:getSize', () => {
 
 ipcMain.on('settings:open', () => {
   console.log('[Main] Settings panel requested');
+});
+
+// ─── IPC: Startup Menu ───────────────────────────────────────────────────────
+
+ipcMain.handle('startup:get-info', () => ({
+  gpu: detectNvidiaGpu(),
+  serverInstalled: isServerInstalled(),
+  ttsEnabled: loadSettings().ttsEnabled,
+}));
+
+ipcMain.handle('startup:continue', (_e, ttsEnabled: boolean) => {
+  const enabled = ttsEnabled === true;
+  saveSettings({ ttsEnabled: enabled });
+  if (resolveStartupMenu) {
+    const r = resolveStartupMenu;
+    resolveStartupMenu = null;
+    r(enabled);
+  }
+  if (startupMenuWindow && !startupMenuWindow.isDestroyed()) {
+    startupMenuWindow.close();
+  }
+  return { ok: true };
 });
 
 // ─── IPC: TTS ────────────────────────────────────────────────────────────────
@@ -855,9 +965,23 @@ app.whenReady().then(async () => {
   await createWindow();
 
   if (process.env.TTS_TEST !== 'true') {
+    // Pre-game configuration: let the player opt into Voice Synthesis
+    // before the intro video plays. Voice Synthesis is off by default.
+    const ttsEnabled = await showStartupMenu();
+    console.log(
+      `[Main] Startup menu closed - Voice Synthesis ${
+        ttsEnabled ? 'ENABLED' : 'disabled'
+      } by player`
+    );
+
     createSplashWindow();
 
-    if (ttsAvailable && splashWindow && !splashWindow.isDestroyed()) {
+    if (
+      ttsEnabled &&
+      ttsAvailable &&
+      splashWindow &&
+      !splashWindow.isDestroyed()
+    ) {
       splashWindow.webContents.once('did-finish-load', () => {
         splashWindow?.webContents.send('splash:tts-needed');
       });
