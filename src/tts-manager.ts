@@ -263,6 +263,11 @@ export const startServer = async (): Promise<LocalTTSConfig> => {
     ...(process.env as Record<string, string>),
     PYTHONIOENCODING: 'utf-8',
     PYTHONUTF8: '1',
+    // Load the AI model from the cache bundled inside tts-server, and never
+    // reach the network: this is a Steam build with no external dependencies.
+    HF_HOME: path.join(serverDir, 'hf_cache'),
+    HF_HUB_OFFLINE: '1',
+    TRANSFORMERS_OFFLINE: '1',
   };
 
   currentProcess = spawn(pythonExe, [serverScript], {

@@ -314,6 +314,48 @@ except Exception as e:
   }
 }
 
+# -- 4b. Pre-download TTS model into hf_cache (offline Steam bundle) ----------
+# Run the server once so it downloads the Chatterbox model into a cache
+# bundled inside tts-server. The shipped app loads from here with
+# HF_HUB_OFFLINE=1, so it never needs to reach Hugging Face at runtime.
+Write-Step "Pre-downloading TTS model into hf_cache..."
+
+$TtsPython = Join-Path $OutputFull "python_embedded\python.exe"
+$ServerPyW = Join-Path $OutputFull "server.py"
+if ((Test-Path $TtsPython) -and (Test-Path $ServerPyW)) {
+  $prevHF = $env:HF_HOME
+  $env:HF_HOME = Join-Path $OutputFull "hf_cache"
+  $warmOk = $false
+  try {
+    $warmProc = Start-Process -FilePath $TtsPython -ArgumentList 'server.py' `
+      -WorkingDirectory $OutputFull -PassThru -WindowStyle Hidden
+    for ($i = 0; $i -lt 300; $i++) {
+      Start-Sleep -Seconds 5
+      if ($warmProc.HasExited) { break }
+      try {
+        $resp = Invoke-WebRequest -Uri "http://127.0.0.1:$Port/api/ui/initial-data" `
+          -TimeoutSec 4 -UseBasicParsing
+        if ($resp.StatusCode -eq 200) { $warmOk = $true; break }
+      } catch { }
+    }
+  } catch {
+    Write-Warn ("TTS model warm-up error: " + $_)
+  } finally {
+    try { Stop-Process -Id $warmProc.Id -Force -EA SilentlyContinue } catch { }
+    Get-CimInstance Win32_Process -Filter "Name='python.exe'" -EA SilentlyContinue |
+      Where-Object { $_.CommandLine -like '*server.py*' } |
+      ForEach-Object { Stop-Process -Id $_.ProcessId -Force -EA SilentlyContinue }
+    $env:HF_HOME = $prevHF
+  }
+  if ($warmOk) {
+    Write-Ok "TTS model cached in hf_cache"
+  } else {
+    Write-Warn "TTS model warm-up unconfirmed (model may download on first run)"
+  }
+} else {
+  Write-Warn "Cannot warm TTS model - python or server.py missing"
+}
+
 # -- 5. Verify ----------------------------------------------------------------
 
 Write-Step "Verifying..."
