@@ -22,6 +22,7 @@ import {
   isServerInstalled,
   transcribeAudio,
   type TTSGenerationParams,
+  type LocalTTSConfig,
 } from './tts-manager';
 import {
   getAssetPackPath,
@@ -42,10 +43,21 @@ interface AppConfig {
   };
 }
 
+/** Result of the startup config dialog. Null means the player closed it. */
+interface StartupChoice {
+  ttsEnabled: boolean;
+  config: LocalTTSConfig | null;
+}
+
 let mainWindow: BrowserWindow | null = null;
 let splashWindow: BrowserWindow | null = null;
 let startupMenuWindow: BrowserWindow | null = null;
-let resolveStartupMenu: ((ttsEnabled: boolean) => void) | null = null;
+let resolveStartupMenu: ((choice: StartupChoice | null) => void) | null = null;
+
+// Live TTS state owned by the startup dialog's voice check. No persistence:
+// the player is asked every launch and the choice lives only in memory.
+let startupTtsConfig: LocalTTSConfig | null = null;
+let ttsCheckAbort: AbortController | null = null;
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 let steamClient: any = null;
@@ -154,40 +166,9 @@ const waitForServer = async (
   return false;
 };
 
-// ─── Player Settings ─────────────────────────────────────────────────────────
-
-interface TironaSettings {
-  ttsEnabled: boolean;
-}
-
-const getSettingsPath = (): string =>
-  path.join(app.getPath('userData'), 'tirona-settings.json');
-
-const loadSettings = (): TironaSettings => {
-  try {
-    const raw = fs.readFileSync(getSettingsPath(), 'utf-8');
-    const parsed = JSON.parse(raw) as Partial<TironaSettings>;
-    return { ttsEnabled: parsed.ttsEnabled === true };
-  } catch {
-    return { ttsEnabled: false };
-  }
-};
-
-const saveSettings = (settings: TironaSettings): void => {
-  try {
-    fs.writeFileSync(
-      getSettingsPath(),
-      JSON.stringify(settings, null, 2),
-      'utf-8'
-    );
-  } catch (err) {
-    console.error('[Main] Failed to save settings:', err);
-  }
-};
-
 // ─── Splash ──────────────────────────────────────────────────────────────────
 
-const createSplashWindow = (ttsEnabled: boolean): void => {
+const createSplashWindow = (): void => {
   splashWindow = new BrowserWindow({
     fullscreen: true,
     frame: false,
@@ -206,18 +187,13 @@ const createSplashWindow = (ttsEnabled: boolean): void => {
   splashWindow.setMenu(null);
 
   const videoPath = path.join(__dirname, '..', 'assets', 'TironaFading.mp4');
-  // With no intro video and no TTS narration to wait for, there is nothing
-  // for the splash to show - go straight to the game.
-  if (!fs.existsSync(videoPath) && !ttsEnabled) {
-    console.warn('No splash video and TTS disabled - skipping to main window');
+  // With no intro video there is nothing for the splash to show - go
+  // straight to the game.
+  if (!fs.existsSync(videoPath)) {
+    console.warn('No splash video - skipping to main window');
     splashWindow.close();
     showMainWindow();
     return;
-  }
-  if (!fs.existsSync(videoPath)) {
-    console.warn(
-      'Splash video not found - splash will show the voice loading screen'
-    );
   }
 
   splashWindow.loadFile(
@@ -501,16 +477,24 @@ const showMainWindow = (): void => {
 
 /**
  * Shows the pre-game configuration window (Voice Synthesis opt-in) and
- * resolves with the player's TTS choice once they click Continue. Shown
- * before the intro video on every launch. Voice Synthesis is off by default.
+ * resolves once the player clicks Launch Game. Asked every launch — the
+ * choice is never persisted and Voice Synthesis is off by default.
+ *
+ * Resolves with the player's choice (including the live TTS config when the
+ * voice check ran inside the dialog, so the server is not restarted), or
+ * null when the window was closed without launching.
+ *
+ * The window is NOT closed here on launch: the caller closes it after the
+ * game/splash windows exist, so the app never hits a zero-window state
+ * (which would fire window-all-closed and quit).
  */
-const showStartupMenu = (): Promise<boolean> => {
+const showStartupMenu = (): Promise<StartupChoice | null> => {
   return new Promise((resolve) => {
     resolveStartupMenu = resolve;
 
     const { width, height } = screen.getPrimaryDisplay().workAreaSize;
-    const w = Math.min(700, width);
-    const h = Math.min(800, height);
+    const w = Math.min(620, width);
+    const h = Math.min(620, height);
 
     startupMenuWindow = new BrowserWindow({
       width: w,
@@ -542,14 +526,24 @@ const showStartupMenu = (): Promise<boolean> => {
 
     startupMenuWindow.on('closed', () => {
       startupMenuWindow = null;
-      // Closed without an explicit choice -> default to TTS disabled.
+      // Abort any in-flight voice check; its events have nowhere to go.
+      ttsCheckAbort?.abort();
+      ttsCheckAbort = null;
+      // Closed without launching -> resolve null (the app will quit via
+      // window-all-closed once this was the last window).
       if (resolveStartupMenu) {
         const r = resolveStartupMenu;
         resolveStartupMenu = null;
-        r(false);
+        r(null);
       }
     });
   });
+};
+
+const closeStartupMenu = (): void => {
+  if (startupMenuWindow && !startupMenuWindow.isDestroyed()) {
+    startupMenuWindow.close();
+  }
 };
 
 const setupDeepLinking = (): void => {
@@ -622,22 +616,137 @@ ipcMain.on('settings:open', () => {
 
 // ─── IPC: Startup Menu ───────────────────────────────────────────────────────
 
-ipcMain.handle('startup:get-info', () => ({
-  gpu: detectNvidiaGpu(),
-  serverInstalled: isServerInstalled(),
-  ttsEnabled: loadSettings().ttsEnabled,
-}));
+ipcMain.handle('startup:get-info', () => {
+  const gpu = detectNvidiaGpu();
+  const serverInstalled = isServerInstalled();
+  return {
+    gpu,
+    serverInstalled,
+    ttsSupported:
+      process.platform === 'win32' && gpu.available && serverInstalled,
+  };
+});
 
-ipcMain.handle('startup:continue', (_e, ttsEnabled: boolean) => {
-  const enabled = ttsEnabled === true;
-  saveSettings({ ttsEnabled: enabled });
+const shortReason = (err: unknown): string => {
+  let msg = err instanceof Error ? err.message : String(err);
+  msg = msg.replace(/\s+/g, ' ').trim();
+  return msg.length > 120 ? `${msg.slice(0, 117)}…` : msg;
+};
+
+/**
+ * Orchestrates the full Voice Synthesis bring-up triggered by the dialog
+ * toggle: GPU check -> spawn server -> model load (health poll) -> generate
+ * the Narrator intro line. Progress and the final result are pushed to the
+ * dialog renderer; the renderer plays the audio and reports back when it
+ * ends. On success the server stays warm for in-game use.
+ */
+const runTtsCheck = async (): Promise<void> => {
+  const win = startupMenuWindow;
+  if (!win || win.isDestroyed()) return;
+  if (ttsCheckAbort) {
+    console.warn('[Startup] TTS check already running, ignoring');
+    return;
+  }
+
+  const abort = new AbortController();
+  ttsCheckAbort = abort;
+  startupTtsConfig = null;
+
+  const t0 = Date.now();
+  const send = (channel: string, payload: unknown): void => {
+    if (!win.isDestroyed()) win.webContents.send(channel, payload);
+  };
+  const progress = (
+    phase: 'gpu' | 'spawn' | 'load' | 'generate' | 'play'
+  ): void =>
+    send('startup:ttsProgress', { phase, elapsedMs: Date.now() - t0 });
+
+  try {
+    progress('gpu');
+    const gpu = detectNvidiaGpu();
+    if (!gpu.available) throw new Error('no NVIDIA GPU detected');
+    if (!isServerInstalled()) throw new Error('voice engine not installed');
+
+    progress('spawn');
+    const spawnedAt = Date.now();
+    const config = await startServer({
+      signal: abort.signal,
+      onSpawned: () => progress('load'),
+    });
+    const modelLoadMs = Date.now() - spawnedAt;
+    if (abort.signal.aborted) throw new Error('cancelled');
+
+    progress('generate');
+    const intro = await generateNarratorIntro(
+      config.defaultVoice,
+      abort.signal
+    );
+    if (abort.signal.aborted) throw new Error('cancelled');
+    if (!intro.audioDataUrl) {
+      throw new Error(intro.error ?? 'voice generation failed');
+    }
+
+    progress('play');
+    startupTtsConfig = config;
+    console.log(
+      `[Startup] TTS check OK - model load ${modelLoadMs}ms, ` +
+      `first audio ${intro.firstAudioMs}ms`
+    );
+    send('startup:ttsResult', {
+      success: true,
+      metrics: { modelLoadMs, firstAudioMs: intro.firstAudioMs },
+      audioDataUrl: intro.audioDataUrl,
+    });
+  } catch (err) {
+    stopServer();
+    startupTtsConfig = null;
+    if (!abort.signal.aborted) {
+      console.error('[Startup] TTS check failed:', err);
+      send('startup:ttsResult', { success: false, reason: shortReason(err) });
+    }
+  } finally {
+    if (ttsCheckAbort === abort) ttsCheckAbort = null;
+  }
+};
+
+ipcMain.handle('startup:beginTtsCheck', () => {
+  void runTtsCheck();
+});
+
+// Cancel covers three cases: abort an in-flight check, stop playback-phase
+// bring-up, and shut the warm server down when the player flips the toggle
+// back to Off after a successful check.
+ipcMain.handle('startup:cancelTtsCheck', () => {
+  ttsCheckAbort?.abort();
+  ttsCheckAbort = null;
+  startupTtsConfig = null;
+  stopServer();
+});
+
+ipcMain.handle(
+  'startup:reportAudioFinished',
+  (_e, audioDurationMs: number) => {
+    console.log(
+      `[Startup] Narrator test playback finished ` +
+      `(${Math.round(audioDurationMs)}ms of audio)`
+    );
+    return { ok: true };
+  }
+);
+
+ipcMain.handle('startup:launchGame', () => {
+  // Defensive: Launch should be unreachable while the overlay is up, but if
+  // a check is somehow still running, treat launching as cancelling it.
+  if (ttsCheckAbort) {
+    ttsCheckAbort.abort();
+    ttsCheckAbort = null;
+    startupTtsConfig = null;
+    stopServer();
+  }
   if (resolveStartupMenu) {
     const r = resolveStartupMenu;
     resolveStartupMenu = null;
-    r(enabled);
-  }
-  if (startupMenuWindow && !startupMenuWindow.isDestroyed()) {
-    startupMenuWindow.close();
+    r({ ttsEnabled: startupTtsConfig !== null, config: startupTtsConfig });
   }
   return { ok: true };
 });
@@ -949,47 +1058,106 @@ const NARRATOR_INTRO_TEXT =
   'Welcome to Tirona, where your choices matter, your luck is questionable, ' +
   'and I will be with you every step of the way. Let’s begin.';
 
+interface NarratorIntroResult {
+  audioDataUrl: string | null;
+  /** Time from POST sent to full HTTP response received. */
+  firstAudioMs: number;
+  error?: string;
+}
+
 /**
  * Generates the Narrator intro line. This is the first TTS request after the
  * model loads: it warms up Chatterbox (the first generation compiles CUDA
- * kernels) and serves as an audible test for the player. Returns a base64
- * WAV data URL, or null on failure.
+ * kernels) and serves as an audible test for the player.
  */
 const generateNarratorIntro = async (
-  voice: string
-): Promise<string | null> => {
+  voice: string,
+  signal?: AbortSignal
+): Promise<NarratorIntroResult> => {
   const baseUrl = await getBaseUrl();
-  if (!baseUrl) return null;
+  if (!baseUrl) {
+    return {
+      audioDataUrl: null,
+      firstAudioMs: 0,
+      error: 'voice server not running',
+    };
+  }
 
+  // Combine the caller's cancel signal with a 120s generation timeout.
+  // (AbortSignal.any is not guaranteed on this Node, so combine manually.)
+  const ctrl = new AbortController();
+  const timer = setTimeout(
+    () => ctrl.abort(new Error('generation timed out')),
+    120_000
+  );
+  const onAbort = (): void => ctrl.abort();
+  signal?.addEventListener('abort', onAbort);
+  if (signal?.aborted) ctrl.abort();
+
+  const t0 = Date.now();
   try {
+    // The /v1/audio/speech endpoint requires a real predefined voice file;
+    // there is no server-side default. Resolve 'default' to an actual voice.
+    let voiceFile = voice;
+    if (!voiceFile || voiceFile === 'default') {
+      const voices = await fetchVoices();
+      voiceFile = voices.find(v => v !== 'default') ?? '';
+      if (!voiceFile) {
+        return {
+          audioDataUrl: null,
+          firstAudioMs: 0,
+          error: 'no predefined voices installed on the voice server',
+        };
+      }
+    }
+    if (!/\.(wav|mp3)$/i.test(voiceFile)) voiceFile = `${voiceFile}.wav`;
+
     const body: Record<string, string> = {
       model: 'turbo',
       input: NARRATOR_INTRO_TEXT,
       response_format: 'wav',
+      voice: voiceFile,
     };
-    if (voice && voice !== 'default') {
-      body.voice = voice.endsWith('.wav') ? voice : `${voice}.wav`;
-    }
 
-    console.log('[Narrator] Generating intro line (warm-up + test)...');
+    console.log(
+      `[Narrator] Generating intro line (warm-up + test, voice=${voiceFile})...`
+    );
     const response = await fetch(`${baseUrl}/v1/audio/speech`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(body),
-      signal: AbortSignal.timeout(120_000),
+      signal: ctrl.signal,
     });
 
     if (!response.ok) {
-      console.error(`[Narrator] HTTP ${response.status}`);
-      return null;
+      const errBody = await response.text().catch(() => '');
+      console.error(`[Narrator] HTTP ${response.status}: ${errBody}`);
+      return {
+        audioDataUrl: null,
+        firstAudioMs: 0,
+        error: `voice test failed (HTTP ${response.status})`,
+      };
     }
 
     const buf = Buffer.from(await response.arrayBuffer());
-    console.log(`[Narrator] Intro generated – ${buf.length} bytes`);
-    return `data:audio/wav;base64,${buf.toString('base64')}`;
+    const firstAudioMs = Date.now() - t0;
+    console.log(
+      `[Narrator] Intro generated – ${buf.length} bytes in ${firstAudioMs}ms`
+    );
+    return {
+      audioDataUrl: `data:audio/wav;base64,${buf.toString('base64')}`,
+      firstAudioMs,
+    };
   } catch (err) {
     console.error('[Narrator] Failed to generate intro:', err);
-    return null;
+    return {
+      audioDataUrl: null,
+      firstAudioMs: 0,
+      error: signal?.aborted ? 'cancelled' : shortReason(err),
+    };
+  } finally {
+    clearTimeout(timer);
+    signal?.removeEventListener('abort', onAbort);
   }
 };
 
@@ -1019,54 +1187,44 @@ app.whenReady().then(async () => {
   console.log('=== TTS STATUS ===');
   console.log(`  GPU: ${gpu.available ? gpu.gpuName : 'none'}`);
   console.log(`  Server installed: ${installed}`);
-  console.log(`  TTS will load: ${ttsAvailable}`);
+  console.log(`  TTS available: ${ttsAvailable}`);
   console.log('==================');
 
-  await createWindow();
-
-  if (process.env.TTS_TEST !== 'true') {
-    // Pre-game configuration: let the player opt into Voice Synthesis
-    // before the intro video plays. Voice Synthesis is off by default.
-    const ttsEnabled = await showStartupMenu();
-    const startTts = ttsEnabled && ttsAvailable;
+  if (process.env.TTS_TEST === 'true') {
+    await createWindow();
+  } else {
+    // Pre-game configuration: nothing else opens until the player clicks
+    // Launch Game. Voice Synthesis is off by default, asked every launch.
+    // If the player turned it on, the warm-up + audible test already ran
+    // inside the dialog and the server is warm.
+    const choice = await showStartupMenu();
+    if (!choice) {
+      // Dialog closed without launching: the app quits via
+      // window-all-closed. Do not create any windows.
+      console.log('[Main] Startup menu closed without launching - exiting');
+      return;
+    }
     console.log(
-      `[Main] Startup menu closed - Voice Synthesis ${
-        ttsEnabled ? 'ENABLED' : 'disabled'
-      } by player (will start: ${startTts})`
+      `[Main] Launching game - Voice Synthesis ${
+        choice.ttsEnabled ? 'ENABLED (server warm)' : 'disabled'
+      }`
     );
 
-    createSplashWindow(startTts);
+    await createWindow();
 
-    if (startTts && splashWindow && !splashWindow.isDestroyed()) {
-      splashWindow.webContents.once('did-finish-load', () => {
-        splashWindow?.webContents.send('splash:tts-needed');
+    if (choice.config && mainWindow && !mainWindow.isDestroyed()) {
+      const config = choice.config;
+      mainWindow.webContents.once('did-finish-load', () => {
+        if (mainWindow && !mainWindow.isDestroyed()) {
+          mainWindow.webContents.send('tts:ready', config);
+        }
       });
-
-      console.log('[Main] Starting TTS server during splash...');
-      startServer()
-        .then(async (config) => {
-          console.log('[Main] TTS server ready during splash');
-          if (mainWindow && !mainWindow.isDestroyed()) {
-            mainWindow.webContents.send('tts:ready', config);
-          }
-          // First generation after model load: warm up Chatterbox and
-          // play the Narrator intro as an audible test on the splash.
-          const audioUrl = await generateNarratorIntro(config.defaultVoice);
-          if (splashWindow && !splashWindow.isDestroyed()) {
-            if (audioUrl) {
-              splashWindow.webContents.send('splash:narrator-audio', audioUrl);
-            } else {
-              splashWindow.webContents.send('splash:tts-ready');
-            }
-          }
-        })
-        .catch((err) => {
-          console.error('[Main] TTS failed to start during splash:', err);
-          if (splashWindow && !splashWindow.isDestroyed()) {
-            splashWindow.webContents.send('splash:tts-ready');
-          }
-        });
     }
+
+    createSplashWindow();
+    // Close the config dialog only now that the game/splash windows exist,
+    // so the app never hits a zero-window state (window-all-closed quits).
+    closeStartupMenu();
   }
 
   // Steam handles its own updates; only use electron-updater for

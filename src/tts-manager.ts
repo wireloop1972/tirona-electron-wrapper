@@ -37,6 +37,13 @@ export interface TTSStatus {
   pid?: number;
 }
 
+export interface StartServerOptions {
+  /** Abort the health-poll wait (e.g. player pressed Cancel). */
+  signal?: AbortSignal;
+  /** Called right after the Python process spawns, before model loading. */
+  onSpawned?: () => void;
+}
+
 // =============================================================================
 // Constants
 // =============================================================================
@@ -92,21 +99,35 @@ export const isServerInstalled = (): boolean => {
 // Health Check
 // =============================================================================
 
-const waitForHealth = async (): Promise<boolean> => {
+const waitForHealth = async (signal?: AbortSignal): Promise<boolean> => {
   const startTime = Date.now();
-  const healthUrl = `${BASE_URL}/api/ui/initial-data`;
+  // /api/model-info reports loaded=true only once the model is actually in
+  // GPU memory. The plain HTTP-up endpoints answer earlier, while the model
+  // is still loading, and generation requests would get a 503.
+  const healthUrl = `${BASE_URL}/api/model-info`;
 
   console.log(`[TTS Manager] Waiting for Turbo server at ${healthUrl}...`);
 
   while (Date.now() - startTime < HEALTH_CHECK_TIMEOUT_MS) {
+    if (signal?.aborted) {
+      console.log('[TTS Manager] Health wait aborted');
+      return false;
+    }
+    if (!currentProcess) {
+      console.error('[TTS Manager] Server process exited during startup');
+      return false;
+    }
     try {
       const res = await fetch(healthUrl, {
         signal: AbortSignal.timeout(3000),
       });
       if (res.ok) {
-        console.log('[TTS Manager] Turbo server is ready');
-        isServerReady = true;
-        return true;
+        const info = (await res.json()) as { loaded?: boolean };
+        if (info.loaded === true) {
+          console.log('[TTS Manager] Turbo server is ready (model loaded)');
+          isServerReady = true;
+          return true;
+        }
       }
     } catch {
       const elapsed = Math.round((Date.now() - startTime) / 1000);
@@ -133,17 +154,35 @@ export const fetchVoices = async (): Promise<string[]> => {
       signal: AbortSignal.timeout(5000),
     });
     if (res.ok) {
-      const data = (await res.json()) as {
-        voices?: Array<{ id: string; name: string }>;
-      };
-      if (data.voices && data.voices.length > 0) {
-        return data.voices.map(v => v.id || v.name);
+      // The devnen server returns a bare array of
+      // { display_name, filename } objects.
+      const data = (await res.json()) as Array<{
+        display_name?: string;
+        filename?: string;
+      }>;
+      if (Array.isArray(data) && data.length > 0) {
+        const names = data
+          .map(v => v.filename || v.display_name || '')
+          .filter(Boolean);
+        if (names.length > 0) return names;
       }
     }
   } catch (err) {
     console.warn('[TTS Manager] Could not fetch voices:', err);
   }
   return ['default'];
+};
+
+/** 'oliverbritmale.wav' -> 'oliverbritmale' for tolerant comparisons. */
+const voiceStem = (v: string): string => v.replace(/\.(wav|mp3)$/i, '');
+
+const buildConfig = (voices: string[]): LocalTTSConfig => {
+  const match = voices.find(v => voiceStem(v) === DEFAULT_VOICE);
+  return {
+    baseUrl: `${BASE_URL}/v1`,
+    defaultVoice: match ?? voices[0] ?? DEFAULT_VOICE,
+    availableVoices: voices,
+  };
 };
 
 // =============================================================================
@@ -188,8 +227,12 @@ const killProcessOnPort = (port: number): void => {
 const cleanupOrphans = (): void => {
   console.log('[TTS Manager] Cleaning up orphan processes...');
   if (process.platform === 'win32') {
-    try { execSync('taskkill /F /IM python.exe /FI "WINDOWTITLE eq Chatterbox*"', { stdio: 'ignore' }); }
-    catch { /* none found */ }
+    try {
+      execSync(
+        'taskkill /F /IM python.exe /FI "WINDOWTITLE eq Chatterbox*"',
+        { stdio: 'ignore' }
+      );
+    } catch { /* none found */ }
   }
   killProcessOnPort(PORT);
 };
@@ -231,13 +274,20 @@ export const stopServer = (): void => {
   currentProcess = null;
 };
 
-export const startServer = async (): Promise<LocalTTSConfig> => {
+export const startServer = async (
+  options?: StartServerOptions
+): Promise<LocalTTSConfig> => {
   const gpu = detectNvidiaGpu();
   if (!gpu.available) {
     throw new Error(
       'No NVIDIA GPU detected. Chatterbox Turbo requires a CUDA-capable GPU.'
     );
   }
+  if (options?.signal?.aborted) {
+    throw new Error('TTS startup cancelled');
+  }
+
+  shuttingDown = false;
 
   if (currentProcess) {
     stopServer();
@@ -294,10 +344,13 @@ export const startServer = async (): Promise<LocalTTSConfig> => {
     console.log(
       `[TTS Manager] Server exited (code=${code}, signal=${signal})`
     );
+    const wasReady = isServerReady;
     currentProcess = null;
     isServerReady = false;
 
-    if (code !== 0 && code !== null && !shuttingDown) {
+    // Only surface an OS dialog for crashes after a successful start;
+    // bring-up failures are reported by the caller (startup dialog).
+    if (code !== 0 && code !== null && !shuttingDown && wasReady) {
       dialog.showErrorBox(
         'TTS Engine Error',
         `Chatterbox Turbo stopped unexpectedly (code ${code}).\n` +
@@ -310,29 +363,26 @@ export const startServer = async (): Promise<LocalTTSConfig> => {
     console.error('[TTS Manager] Failed to start server:', err);
     currentProcess = null;
     isServerReady = false;
-    dialog.showErrorBox(
-      'TTS Engine Error',
-      `Failed to start Chatterbox Turbo:\n${err.message}`
-    );
   });
 
   console.log(`[TTS Manager] Server PID: ${currentProcess.pid}`);
+  options?.onSpawned?.();
 
-  const ready = await waitForHealth();
+  const ready = await waitForHealth(options?.signal);
   if (!ready) {
+    const aborted = options?.signal?.aborted === true;
+    const crashed = !aborted && currentProcess === null;
     stopServer();
-    throw new Error('Chatterbox Turbo failed to start within timeout');
+    throw new Error(
+      aborted
+        ? 'TTS startup cancelled'
+        : crashed
+          ? 'voice server exited during startup'
+          : 'voice server did not become ready in time'
+    );
   }
 
-  const voices = await fetchVoices();
-
-  return {
-    baseUrl: `${BASE_URL}/v1`,
-    defaultVoice: voices.includes(DEFAULT_VOICE)
-      ? DEFAULT_VOICE
-      : (voices[0] ?? DEFAULT_VOICE),
-    availableVoices: voices,
-  };
+  return buildConfig(await fetchVoices());
 };
 
 // =============================================================================
@@ -341,10 +391,12 @@ export const startServer = async (): Promise<LocalTTSConfig> => {
 
 const detectExternalServer = async (): Promise<boolean> => {
   try {
-    const res = await fetch(`${BASE_URL}/api/ui/initial-data`, {
+    const res = await fetch(`${BASE_URL}/api/model-info`, {
       signal: AbortSignal.timeout(2000),
     });
-    return res.ok;
+    if (!res.ok) return false;
+    const info = (await res.json()) as { loaded?: boolean };
+    return info.loaded === true;
   } catch {
     return false;
   }
@@ -369,14 +421,7 @@ export const getConfig = async (): Promise<LocalTTSConfig | null> => {
   const status = await getStatus();
   if (!status.running || !status.ready) return null;
 
-  const voices = await fetchVoices();
-  return {
-    baseUrl: `${BASE_URL}/v1`,
-    defaultVoice: voices.includes(DEFAULT_VOICE)
-      ? DEFAULT_VOICE
-      : (voices[0] ?? DEFAULT_VOICE),
-    availableVoices: voices,
-  };
+  return buildConfig(await fetchVoices());
 };
 
 export const getBaseUrl = async (): Promise<string | null> => {

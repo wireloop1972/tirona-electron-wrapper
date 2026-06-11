@@ -4,7 +4,7 @@
   <meta charset="UTF-8" />
   <meta
     http-equiv="Content-Security-Policy"
-    content="default-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; script-src 'self' 'unsafe-inline';"
+    content="default-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; script-src 'self' 'unsafe-inline'; media-src 'self' data:;"
   />
   <title>Tirona Rebirth — Configuration</title>
   <style>
@@ -21,7 +21,6 @@
       --text-dim: #9c8f7e;
       --border: rgba(240, 200, 120, 0.18);
       --good: #6ec07a;
-      --warn: #e0a64b;
       --bad: #d9655a;
     }
 
@@ -31,8 +30,7 @@
       background: linear-gradient(160deg, #2d1f14 0%, var(--bg-deep) 55%);
       color: var(--text);
       font-family: 'Segoe UI', Tahoma, sans-serif;
-      overflow-x: hidden;
-      overflow-y: auto;
+      overflow: hidden;
       -webkit-app-region: drag;
       display: flex;
       flex-direction: column;
@@ -42,19 +40,19 @@
     button, input, label, .panel { -webkit-app-region: no-drag; }
 
     .container {
-      max-width: 620px;
+      max-width: 560px;
       width: 100%;
       margin: 0 auto;
-      padding: 34px 32px 28px;
+      padding: 32px 32px 26px;
       display: flex;
       flex-direction: column;
       flex: 1;
     }
 
     /* Header */
-    .header { text-align: center; margin-bottom: 24px; }
+    .header { text-align: center; margin-bottom: 22px; }
     .header img {
-      width: 66px; height: 66px; margin-bottom: 10px;
+      width: 64px; height: 64px; margin-bottom: 10px;
       filter: drop-shadow(0 0 12px rgba(240, 200, 120, 0.35));
     }
     .header h1 {
@@ -75,57 +73,23 @@
       padding: 22px;
       margin-bottom: 18px;
     }
-    .panel h2 {
-      font-family: 'Cinzel', Georgia, serif;
-      font-size: 16px; font-weight: 600; color: var(--gold);
-      margin-bottom: 16px; display: flex; align-items: center; gap: 9px;
-    }
 
-    .status-box {
+    /* GPU status line */
+    .gpu-status {
       background: var(--bg-row);
       border-radius: 8px;
-      padding: 6px 14px;
-      margin-bottom: 16px;
+      padding: 12px 14px;
+      font-size: 13px;
+      line-height: 1.5;
+      color: var(--text-dim);
     }
-    .row {
-      display: flex; justify-content: space-between; align-items: center;
-      padding: 9px 0; font-size: 13.5px;
-      border-bottom: 1px solid rgba(240, 200, 120, 0.08);
-    }
-    .row:last-child { border-bottom: none; }
-    .row .label { color: var(--text-dim); }
-    .row .value { font-weight: 600; }
-    .v-good { color: var(--good); }
-    .v-warn { color: var(--warn); }
-    .v-bad  { color: var(--bad); }
-    .v-dim  { color: var(--text-dim); }
-
-    .verdict-detail {
-      font-size: 12.5px; color: var(--text-dim);
-      line-height: 1.55; margin: 10px 2px 14px;
-    }
-
-    .specs {
-      list-style: none;
-      border-top: 1px solid var(--border);
-      padding-top: 13px;
-    }
-    .specs li {
-      position: relative; padding-left: 16px; margin-bottom: 7px;
-      font-size: 12.5px; color: var(--text-dim); line-height: 1.5;
-    }
-    .specs li:last-child { margin-bottom: 0; }
-    .specs li::before {
-      content: "◆"; position: absolute; left: 0;
-      color: var(--gold-muted); font-size: 9px; top: 3px;
-    }
-    .specs strong { color: var(--text); font-weight: 600; }
+    .gpu-status.available { color: var(--good); }
+    .gpu-status.unavailable { color: var(--bad); }
 
     /* Toggle */
     .toggle-row {
       display: flex; align-items: center; gap: 14px;
-      margin-top: 18px; padding-top: 16px;
-      border-top: 1px solid var(--border);
+      margin-top: 18px;
     }
     .switch { position: relative; width: 50px; height: 27px; flex-shrink: 0; }
     .switch input { opacity: 0; width: 0; height: 0; }
@@ -145,14 +109,39 @@
     .switch input:checked + .slider::before {
       transform: translateX(23px); background: var(--bg-deep);
     }
-    .switch input:disabled + .slider { opacity: 0.45; cursor: not-allowed; }
+    .switch input:disabled + .slider { opacity: 0.4; cursor: not-allowed; }
     .toggle-text { display: flex; flex-direction: column; gap: 2px; }
-    .toggle-text .t-title { font-size: 14.5px; font-weight: 600; color: var(--text); }
+    .toggle-text .t-title {
+      font-size: 14.5px; font-weight: 600; color: var(--text);
+    }
     .toggle-text .t-note { font-size: 11.5px; color: var(--text-dim); }
+    .toggle-row.disabled .t-title,
+    .toggle-row.disabled .t-note { opacity: 0.45; }
+
+    /* Result strip */
+    .result-strip {
+      margin-top: 16px;
+      padding: 10px 14px;
+      border-radius: 8px;
+      font-size: 12.5px;
+      line-height: 1.5;
+      display: none;
+    }
+    .result-strip.show { display: block; }
+    .result-strip.good {
+      color: var(--good);
+      background: rgba(110, 192, 122, 0.08);
+      border: 1px solid rgba(110, 192, 122, 0.25);
+    }
+    .result-strip.bad {
+      color: var(--bad);
+      background: rgba(217, 101, 90, 0.08);
+      border: 1px solid rgba(217, 101, 90, 0.25);
+    }
 
     /* Footer */
     .footer { margin-top: auto; padding-top: 14px; text-align: center; }
-    .btn-continue {
+    .btn-launch {
       background: linear-gradient(180deg, var(--gold) 0%, var(--gold-dim) 100%);
       color: var(--bg-deep);
       font-family: 'Cinzel', Georgia, serif;
@@ -161,9 +150,108 @@
       padding: 13px 54px; cursor: pointer;
       transition: opacity 0.15s, transform 0.1s;
     }
-    .btn-continue:hover { opacity: 0.9; }
-    .btn-continue:active { transform: translateY(1px); }
-    .footer .hint { margin-top: 9px; font-size: 11px; color: var(--text-dim); }
+    .btn-launch:hover:not(:disabled) { opacity: 0.9; }
+    .btn-launch:active:not(:disabled) { transform: translateY(1px); }
+    .btn-launch:disabled { opacity: 0.45; cursor: not-allowed; }
+
+    /* ── Modal overlay ─────────────────────────────────────────────── */
+    .overlay {
+      position: fixed; inset: 0;
+      display: none;
+      align-items: center; justify-content: center;
+      background: rgba(10, 7, 4, 0.78);
+      z-index: 100;
+      -webkit-app-region: no-drag;
+      opacity: 0;
+      transition: opacity 0.25s ease;
+    }
+    .overlay.show { display: flex; }
+    .overlay.visible { opacity: 1; }
+
+    .overlay-card {
+      background: var(--bg-panel);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      width: 420px; max-width: calc(100vw - 48px);
+      padding: 28px 26px 18px;
+      display: flex; flex-direction: column; align-items: center;
+      box-shadow: 0 18px 60px rgba(0, 0, 0, 0.6);
+    }
+
+    .ring-spinner {
+      width: 44px; height: 44px;
+      border: 3px solid rgba(240, 200, 120, 0.18);
+      border-top-color: var(--gold);
+      border-radius: 50%;
+      animation: spin 0.9s linear infinite;
+      margin-bottom: 18px;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    .ov-status {
+      font-size: 13.5px;
+      color: var(--text);
+      text-align: center;
+      min-height: 20px;
+      margin-bottom: 14px;
+    }
+
+    .ov-progress {
+      width: 100%;
+      height: 6px;
+      -webkit-appearance: none;
+      appearance: none;
+      border: none;
+      border-radius: 3px;
+      overflow: hidden;
+      background: var(--bg-row);
+      margin-bottom: 10px;
+    }
+    .ov-progress::-webkit-progress-bar { background: var(--bg-row); }
+    .ov-progress::-webkit-progress-value {
+      background: var(--gold);
+      transition: width 0.3s ease;
+    }
+    /* Indeterminate (no value attr): animated sweep */
+    .ov-progress:indeterminate {
+      background: linear-gradient(
+        90deg,
+        var(--bg-row) 0%, var(--bg-row) 35%,
+        var(--gold-muted) 50%,
+        var(--bg-row) 65%, var(--bg-row) 100%
+      );
+      background-size: 200% 100%;
+      animation: sweep 1.4s linear infinite;
+    }
+    .ov-progress:indeterminate::-webkit-progress-bar { background: transparent; }
+    @keyframes sweep {
+      from { background-position: 100% 0; }
+      to   { background-position: -100% 0; }
+    }
+
+    .ov-timer {
+      font-size: 12px;
+      font-family: 'Consolas', monospace;
+      color: var(--text-dim);
+      margin-bottom: 14px;
+    }
+
+    .ov-footer {
+      width: 100%;
+      display: flex;
+      justify-content: flex-end;
+    }
+    .btn-cancel {
+      background: transparent;
+      color: var(--text-dim);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      font-size: 12.5px;
+      padding: 7px 22px;
+      cursor: pointer;
+      transition: color 0.15s, border-color 0.15s;
+    }
+    .btn-cancel:hover { color: var(--text); border-color: var(--gold-muted); }
   </style>
 </head>
 <body>
@@ -175,145 +263,295 @@
     </div>
 
     <div class="panel">
-      <h2>&#127908; Voice Synthesis</h2>
+      <div class="gpu-status" id="gpu-status">Detecting GPU&hellip;</div>
 
-      <div class="status-box">
-        <div class="row">
-          <span class="label">GPU detected</span>
-          <span class="value v-dim" id="gpu-name">Detecting…</span>
-        </div>
-        <div class="row">
-          <span class="label">Video memory</span>
-          <span class="value v-dim" id="gpu-vram">—</span>
-        </div>
-        <div class="row">
-          <span class="label">Hardware recommendation</span>
-          <span class="value v-dim" id="hw-verdict">Evaluating…</span>
-        </div>
-      </div>
-
-      <p class="verdict-detail" id="hw-detail">
-        Checking your hardware against voice-synthesis requirements…
-      </p>
-
-      <ul class="specs">
-        <li><strong>Recommended:</strong> NVIDIA RTX GPU with 6&nbsp;GB+ VRAM.</li>
-        <li><strong>Minimum:</strong> NVIDIA (CUDA) GPU with 4&nbsp;GB VRAM.</li>
-        <li><strong>Not supported:</strong> AMD / Intel GPUs and CPU-only — voice
-          synthesis is NVIDIA/CUDA only.</li>
-        <li>The voice model loads into GPU memory; first launch can take
-          1–3&nbsp;minutes.</li>
-      </ul>
-
-      <div class="toggle-row">
+      <div class="toggle-row" id="toggle-row">
         <label class="switch">
           <input type="checkbox" id="tts-toggle" disabled />
           <span class="slider"></span>
         </label>
         <div class="toggle-text">
-          <span class="t-title">Enable Voice Synthesis</span>
-          <span class="t-note" id="toggle-note">Off by default. Turn on to narrate the game with AI voice.</span>
+          <span class="t-title">Voice Synthesis</span>
+          <span class="t-note" id="toggle-note">Play without AI narrator voiceover</span>
         </div>
       </div>
+
+      <div class="result-strip" id="result-strip"></div>
     </div>
 
     <div class="footer">
-      <button class="btn-continue" id="continue-btn">Continue</button>
-      <div class="hint">You can change this the next time you launch Tirona.</div>
+      <button class="btn-launch" id="launch-btn">Launch Game</button>
     </div>
   </div>
+
+  <!-- Modal overlay: blocks toggle + Launch while the voice check runs -->
+  <div class="overlay" id="overlay">
+    <div class="overlay-card">
+      <div class="ring-spinner"></div>
+      <div class="ov-status" id="ov-status">Checking GPU&hellip;</div>
+      <progress class="ov-progress" id="ov-progress" max="100" value="0"></progress>
+      <div class="ov-timer" id="ov-timer">00:00</div>
+      <div class="ov-footer">
+        <button class="btn-cancel" id="cancel-btn">Cancel</button>
+      </div>
+    </div>
+  </div>
+
+  <audio id="test-audio"></audio>
 
   <script>
     const el = (id) => document.getElementById(id);
 
-    function evaluateHardware(gpu, serverInstalled) {
-      if (!gpu || !gpu.available) {
-        return {
-          label: 'Not Available', cls: 'v-bad', canEnable: false,
-          detail: 'No NVIDIA GPU detected. Voice synthesis requires a ' +
-                  'CUDA-capable NVIDIA GPU and cannot be enabled on this machine.',
-        };
-      }
-      if (!serverInstalled) {
-        return {
-          label: 'Not Installed', cls: 'v-bad', canEnable: false,
-          detail: 'The voice-synthesis engine is not installed in this build, ' +
-                  'so it cannot be enabled.',
-        };
-      }
-      const vram = gpu.vramMB || 0;
-      if (vram >= 6000) {
-        return {
-          label: 'Recommended', cls: 'v-good', canEnable: true,
-          detail: 'Your GPU has ' + vram + ' MB VRAM, comfortably above the ' +
-                  '6 GB recommendation. Voice synthesis should run smoothly.',
-        };
-      }
-      if (vram >= 4000) {
-        return {
-          label: 'Marginal', cls: 'v-warn', canEnable: true,
-          detail: 'Your GPU has ' + vram + ' MB VRAM. Voice synthesis will ' +
-                  'work, but generation may be slower than recommended.',
-        };
-      }
-      return {
-        label: 'Not Recommended', cls: 'v-bad', canEnable: true,
-        detail: 'Your GPU reports ' + vram + ' MB VRAM, below the 4 GB ' +
-                'minimum. You can still enable it, but performance may suffer.',
-      };
-    }
+    const toggle = el('tts-toggle');
+    const toggleRow = el('toggle-row');
+    const toggleNote = el('toggle-note');
+    const launchBtn = el('launch-btn');
+    const resultStrip = el('result-strip');
+    const overlay = el('overlay');
+    const ovStatus = el('ov-status');
+    const ovProgress = el('ov-progress');
+    const ovTimer = el('ov-timer');
+    const cancelBtn = el('cancel-btn');
+    const audio = el('test-audio');
 
-    let ttsEnabledChoice = false;
+    const SUBTEXT_OFF = 'Play without AI narrator voiceover';
+    const SUBTEXT_ON = 'Run AI narrator (requires NVIDIA GPU)';
+
+    const PHASE_TEXT = {
+      gpu: 'Checking GPU…',
+      spawn: 'Starting Chatterbox Turbo server…',
+      load: 'Loading Chatterbox Turbo model into GPU memory…',
+      generate: 'Model loaded. Running voice test…',
+      play: 'Playing test sentence…',
+    };
+
+    // idle | checking | playing | ready
+    let state = 'idle';
+    let metrics = null;
+    let timerHandle = null;
+    let overlayStart = 0;
+
+    // ── Overlay helpers ──────────────────────────────────────────────
+
+    const fmtElapsed = (ms) => {
+      const s = Math.floor(ms / 1000);
+      const mm = String(Math.floor(s / 60)).padStart(2, '0');
+      const ss = String(s % 60).padStart(2, '0');
+      return mm + ':' + ss;
+    };
+
+    const setDeterminate = (value) => {
+      ovProgress.max = 100;
+      ovProgress.value = value;
+    };
+    const setIndeterminate = () => {
+      ovProgress.removeAttribute('value');
+    };
+
+    const showOverlay = () => {
+      overlayStart = Date.now();
+      ovTimer.textContent = '00:00';
+      ovStatus.textContent = PHASE_TEXT.gpu;
+      setDeterminate(3);
+      overlay.classList.add('show');
+      requestAnimationFrame(() => overlay.classList.add('visible'));
+      timerHandle = setInterval(() => {
+        ovTimer.textContent = fmtElapsed(Date.now() - overlayStart);
+      }, 250);
+    };
+
+    const hideOverlay = () => {
+      if (timerHandle) { clearInterval(timerHandle); timerHandle = null; }
+      overlay.classList.remove('visible');
+      setTimeout(() => overlay.classList.remove('show'), 250);
+    };
+
+    const showResult = (kind, text) => {
+      resultStrip.className = 'result-strip show ' + kind;
+      resultStrip.textContent = text;
+    };
+    const clearResult = () => {
+      resultStrip.className = 'result-strip';
+      resultStrip.textContent = '';
+    };
+
+    const stopAudio = () => {
+      try { audio.pause(); } catch (e) { /* ignore */ }
+      audio.removeAttribute('src');
+    };
+
+    // ── State transitions ────────────────────────────────────────────
+
+    const startCheck = () => {
+      state = 'checking';
+      metrics = null;
+      clearResult();
+      launchBtn.disabled = true;
+      toggleNote.textContent = SUBTEXT_ON;
+      showOverlay();
+      window.startupAPI.beginTtsCheck();
+    };
+
+    const cancelCheck = () => {
+      const wasState = state;
+      state = 'idle';
+      stopAudio();
+      window.startupAPI.cancelTtsCheck();
+      hideOverlay();
+      toggle.checked = false;
+      toggleNote.textContent = SUBTEXT_OFF;
+      if (wasState === 'ready') clearResult();
+      launchBtn.disabled = false;
+    };
+
+    const failCheck = (reason) => {
+      state = 'idle';
+      stopAudio();
+      hideOverlay();
+      toggle.checked = false;
+      toggleNote.textContent = SUBTEXT_OFF;
+      showResult(
+        'bad',
+        'Voice Synthesis failed — ' + reason +
+        '. You can launch without voice.'
+      );
+      launchBtn.disabled = false;
+    };
+
+    const finishSuccess = () => {
+      if (state !== 'playing') return;
+      state = 'ready';
+      const durMs = Number.isFinite(audio.duration)
+        ? audio.duration * 1000
+        : 0;
+      window.startupAPI.reportAudioFinished(durMs);
+      stopAudio();
+      hideOverlay();
+
+      const loadS = (metrics.modelLoadMs / 1000).toFixed(1);
+      const audioS = (metrics.firstAudioMs / 1000).toFixed(1);
+      const rtf = durMs > 0
+        ? (metrics.firstAudioMs / durMs).toFixed(2)
+        : '?';
+      showResult(
+        'good',
+        'Voice Synthesis ready · Model load: ' + loadS +
+        's · First audio: ' + audioS + 's · RTF: ' + rtf + '×'
+      );
+      toggleNote.textContent = SUBTEXT_ON;
+      launchBtn.disabled = false;
+    };
+
+    // ── Wiring ───────────────────────────────────────────────────────
+
+    toggle.addEventListener('change', () => {
+      if (toggle.checked) {
+        if (state === 'idle') startCheck();
+      } else {
+        // Off during a check = Cancel; Off after success stops the
+        // warm server and reverts to the no-voice launch path.
+        if (state !== 'idle') cancelCheck();
+        else toggleNote.textContent = SUBTEXT_OFF;
+      }
+    });
+
+    cancelBtn.addEventListener('click', cancelCheck);
+
+    window.startupAPI.onProgress((p) => {
+      if (state !== 'checking') return;
+      if (PHASE_TEXT[p.phase]) ovStatus.textContent = PHASE_TEXT[p.phase];
+      switch (p.phase) {
+        case 'gpu': setDeterminate(3); break;
+        case 'spawn': setDeterminate(10); break;
+        case 'load': setIndeterminate(); break;     // open-ended health poll
+        case 'generate': setIndeterminate(); break; // open-ended generation
+        case 'play': setDeterminate(0); break;      // driven by playback
+        default: break;
+      }
+    });
+
+    window.startupAPI.onResult((r) => {
+      if (state !== 'checking') return; // cancelled meanwhile
+      if (!r.success) {
+        failCheck(r.reason || 'unknown error');
+        return;
+      }
+      state = 'playing';
+      metrics = r.metrics;
+      ovStatus.textContent = PHASE_TEXT.play;
+      setDeterminate(0);
+      audio.src = r.audioDataUrl;
+      const p = audio.play();
+      if (p && p.catch) {
+        p.catch(() => {
+          if (state === 'playing') failAudio();
+        });
+      }
+    });
+
+    const failAudio = () => {
+      // Decode/playback error: stop the server too, then show failure.
+      window.startupAPI.cancelTtsCheck();
+      failCheck('audio playback error');
+    };
+
+    audio.addEventListener('ended', finishSuccess);
+    audio.addEventListener('error', () => {
+      if (state === 'playing') failAudio();
+    });
+    audio.addEventListener('timeupdate', () => {
+      if (state !== 'playing') return;
+      if (Number.isFinite(audio.duration) && audio.duration > 0) {
+        setDeterminate(
+          Math.min(100, (audio.currentTime / audio.duration) * 100)
+        );
+      }
+    });
+
+    launchBtn.addEventListener('click', () => {
+      if (state === 'checking' || state === 'playing') return;
+      launchBtn.disabled = true;
+      toggle.disabled = true;
+      launchBtn.textContent = 'Launching…';
+      window.startupAPI.launchGame();
+    });
+
+    // ── Init ─────────────────────────────────────────────────────────
 
     async function init() {
       let info;
       try {
         info = await window.startupAPI.getInfo();
       } catch (e) {
-        info = { gpu: { available: false }, serverInstalled: false, ttsEnabled: false };
+        info = { gpu: { available: false }, serverInstalled: false,
+                 ttsSupported: false };
       }
 
       const gpu = info.gpu || { available: false };
+      const status = el('gpu-status');
 
-      el('gpu-name').textContent = gpu.available
-        ? (gpu.gpuName || 'NVIDIA GPU')
-        : 'None detected';
-      el('gpu-name').className = 'value ' + (gpu.available ? 'v-good' : 'v-bad');
-
-      el('gpu-vram').textContent =
-        gpu.available && gpu.vramMB ? gpu.vramMB + ' MB' : '—';
-      el('gpu-vram').className = 'value v-dim';
-
-      const verdict = evaluateHardware(gpu, info.serverInstalled);
-      el('hw-verdict').textContent = verdict.label;
-      el('hw-verdict').className = 'value ' + verdict.cls;
-      el('hw-detail').textContent = verdict.detail;
-
-      const toggle = el('tts-toggle');
-      if (verdict.canEnable) {
+      if (info.ttsSupported) {
+        status.textContent =
+          'GPU: ' + (gpu.gpuName || 'NVIDIA GPU') +
+          ' — Voice Synthesis available';
+        status.classList.add('available');
         toggle.disabled = false;
-        // Default off; reflect the player's last saved choice if any.
-        toggle.checked = info.ttsEnabled === true;
       } else {
+        if (gpu.available && !info.serverInstalled) {
+          status.textContent =
+            'GPU: ' + (gpu.gpuName || 'NVIDIA GPU') +
+            ' — Voice Synthesis unavailable (engine not installed)';
+        } else {
+          status.textContent =
+            'GPU: none detected (or non-NVIDIA) — ' +
+            'Voice Synthesis unavailable';
+        }
+        status.classList.add('unavailable');
         toggle.disabled = true;
         toggle.checked = false;
-        el('toggle-note').textContent =
-          'Unavailable on this machine — see the recommendation above.';
+        toggleRow.classList.add('disabled');
       }
-      ttsEnabledChoice = toggle.checked;
-      toggle.addEventListener('change', () => {
-        ttsEnabledChoice = toggle.checked;
-      });
     }
-
-    el('continue-btn').addEventListener('click', async () => {
-      el('continue-btn').disabled = true;
-      try {
-        await window.startupAPI.continue(ttsEnabledChoice);
-      } catch (e) {
-        el('continue-btn').disabled = false;
-      }
-    });
 
     init();
   </script>

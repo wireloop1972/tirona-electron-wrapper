@@ -248,6 +248,31 @@ if ($LASTEXITCODE -gt 7) {
 
 Write-Ok ("Server copied to " + $OutputFull)
 
+# -- 4a-voices. Bundle custom Tirona voices -----------------------------------
+# The repo's voices/ folder holds custom predefined voices (e.g. the Narrator
+# voice oliverbritmale.wav referenced by default_voice_id in config.yaml).
+# The upstream server ships only stock voices, so copy ours in.
+
+$CustomVoicesSrc = Join-Path $RootDir "voices"
+$ServerVoicesDir = Join-Path $OutputFull "voices"
+
+if (Test-Path $CustomVoicesSrc) {
+  Write-Step "Copying custom Tirona voices..."
+  if (-not (Test-Path $ServerVoicesDir)) {
+    New-Item $ServerVoicesDir -ItemType Directory -Force | Out-Null
+  }
+  $copied = 0
+  Get-ChildItem $CustomVoicesSrc -File |
+    Where-Object { $_.Extension -in '.wav', '.mp3' } |
+    ForEach-Object {
+      Copy-Item $_.FullName $ServerVoicesDir -Force
+      $copied++
+    }
+  Write-Ok ("Copied " + $copied + " custom voice(s) into server voices/")
+} else {
+  Write-Warn ("No custom voices folder at " + $CustomVoicesSrc)
+}
+
 # -- 4b. Install faster-whisper STT addon ------------------------------------
 
 Write-Step "Installing faster-whisper STT addon..."
