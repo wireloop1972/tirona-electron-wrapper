@@ -191,7 +191,7 @@ server:
   open_browser: false
 
 model:
-  repo_id: "ResembleAI/chatterbox"
+  repo_id: "chatterbox-turbo"
 
 tts_engine:
   device: "cuda"
@@ -361,6 +361,12 @@ $ServerPyW = Join-Path $OutputFull "server.py"
 if ((Test-Path $TtsPython) -and (Test-Path $ServerPyW)) {
   $prevHF = $env:HF_HOME
   $env:HF_HOME = Join-Path $OutputFull "hf_cache"
+  # ChatterboxTurboTTS.from_pretrained passes token=True to snapshot_download,
+  # which throws LocalTokenNotFoundError on a build box with no HF login. Keep
+  # a real token if the builder has one; otherwise a placeholder is enough to
+  # resolve the already-bundled weights.
+  $prevTok = $env:HF_TOKEN
+  if (-not $env:HF_TOKEN) { $env:HF_TOKEN = "offline" }
   $warmOk = $false
   try {
     $warmProc = Start-Process -FilePath $TtsPython -ArgumentList 'server.py' `
@@ -382,6 +388,7 @@ if ((Test-Path $TtsPython) -and (Test-Path $ServerPyW)) {
       Where-Object { $_.CommandLine -like '*server.py*' } |
       ForEach-Object { Stop-Process -Id $_.ProcessId -Force -EA SilentlyContinue }
     $env:HF_HOME = $prevHF
+    $env:HF_TOKEN = $prevTok
   }
   if ($warmOk) {
     Write-Ok "TTS model cached in hf_cache"

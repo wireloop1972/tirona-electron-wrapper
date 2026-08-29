@@ -205,7 +205,14 @@ Copy-Item (Join-Path $vdfDir "depot_content.vdf") $scriptsDir -Force
 Copy-Item (Join-Path $vdfDir "depot_tts.vdf") $scriptsDir -Force
 Copy-Item (Join-Path $vdfDir "depot_static.vdf") $scriptsDir -Force
 
-Write-Host "  Copied 5 VDF files to $scriptsDir"
+# AMD beta branch. Same four content dirs, except depot 4503863 is served
+# from win_tts_amd (staged separately - see STEAM_AMD_BRANCH.md). The VDFs
+# still have to travel with the rest, or an AMD upload runs against stale
+# copies of them.
+Copy-Item (Join-Path $vdfDir "app_build_amd.vdf") $scriptsDir -Force
+Copy-Item (Join-Path $vdfDir "depot_tts_amd.vdf") $scriptsDir -Force
+
+Write-Host "  Copied 7 VDF files to $scriptsDir (incl. AMD beta branch)"
 
 # ── Summary ──────────────────────────────────────────────────────────────────
 

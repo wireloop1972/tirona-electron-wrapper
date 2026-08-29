@@ -58,6 +58,7 @@ $recursiveFolders = @(
   "textures\pbr",
   "textures\skybox",
   "textures\ground",
+  "textures\heightmaps",
   "hdr"
 )
 

@@ -12,6 +12,9 @@ files:
   - package.json
   - src/splash.html
   - src/startup-menu.html
+  # source woff2 + the SIL OFL licence texts, which must accompany any build
+  # carrying the embedded faces
+  - src/fonts/**/*
   - assets/**/*
 
 # steam_appid.txt must sit next to the executable (not inside app.asar) so

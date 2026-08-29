@@ -169,7 +169,46 @@ const main = async () => {
 
   // 2. Filter to required assets only
   const requiredSet = new Set(manifest.required);
-  const toDownload = manifest.assets.filter((a) => requiredSet.has(a.id));
+  const required = manifest.assets.filter((a) => requiredSet.has(a.id));
+
+  // The manifest can list one id twice: a legacy blob still carrying its upload
+  // suffix ('monster_cage__211-68t4ngOo....glb') alongside the re-encoded
+  // canonical upload ('monster_cage__211.glb'). Both resolve to the same dest
+  // path below, so downloading both races two write streams onto one file and
+  // leaves a silently corrupt asset whose size is nondeterministic. Keep a
+  // single entry per id: prefer the URL whose filename is exactly the id (the
+  // canonical re-encode), then the smaller file.
+  const fileNameOf = (a: AssetEntry): string =>
+    decodeURIComponent((a.url.split('/').pop() ?? '').split('?')[0]);
+  const isCanonical = (a: AssetEntry): boolean => fileNameOf(a) === a.id;
+
+  const byId = new Map<string, AssetEntry>();
+  const deduped: string[] = [];
+  for (const a of required) {
+    const seen = byId.get(a.id);
+    if (!seen) {
+      byId.set(a.id, a);
+      continue;
+    }
+    const keep =
+      isCanonical(a) !== isCanonical(seen)
+        ? (isCanonical(a) ? a : seen)
+        : (a.size <= seen.size ? a : seen);
+    const drop = keep === a ? seen : a;
+    byId.set(a.id, keep);
+    deduped.push(
+      `${a.id}: kept ${fileNameOf(keep)} (${formatBytes(keep.size)}), ` +
+      `dropped ${fileNameOf(drop)} (${formatBytes(drop.size)})`
+    );
+  }
+
+  const toDownload = [...byId.values()];
+  if (deduped.length > 0) {
+    console.log(`  Deduped ${deduped.length} duplicate id(s) in the manifest:`);
+    for (const d of deduped) console.log(`    - ${d}`);
+    console.log();
+  }
+
   const totalBytes = toDownload.reduce((sum, a) => sum + a.size, 0);
 
   console.log(

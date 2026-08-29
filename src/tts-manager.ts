@@ -11,7 +11,8 @@ import { app, dialog } from 'electron';
 import * as fs from 'fs';
 import * as path from 'path';
 import { spawn, ChildProcess, execSync } from 'child_process';
-import { detectNvidiaGpu } from './gpu-detect';
+import { detectNvidiaGpu, detectAmdGpu, type GpuInfo } from './gpu-detect';
+import { matchVoiceFile, voiceStem, FALLBACK_VOICE_STEM } from './voice-resolve';
 
 // =============================================================================
 // Types
@@ -42,6 +43,13 @@ export interface StartServerOptions {
   signal?: AbortSignal;
   /** Called right after the Python process spawns, before model loading. */
   onSpawned?: () => void;
+  /**
+   * Per-line server output (stdout + stderr) while the engine boots. The
+   * startup dialog feeds these to its live log so the player can see the
+   * model actually loading; model load is the long, silent part of bring-up
+   * and its duration is dominated by the GPU.
+   */
+  onLog?: (line: string) => void;
 }
 
 // =============================================================================
@@ -93,6 +101,91 @@ export const isServerInstalled = (): boolean => {
   const pythonExe = getPythonExe();
   const serverPy = path.join(getServerDir(), 'server.py');
   return fs.existsSync(pythonExe) && fs.existsSync(serverPy);
+};
+
+// =============================================================================
+// Bundled Backend + GPU Capability
+// =============================================================================
+
+/**
+ * Which GPU runtime the bundled Python env was built for. Steam ships one
+ * env per branch (default = CUDA, amd beta = ROCm) at the SAME path, so the
+ * wrapper detects which one it got from the installed torch wheel's local
+ * version tag (torch-2.10.0+cu128 vs torch-2.9.1+rocm7.2.1) instead of
+ * trusting build-time flags. One code depot then serves both branches, and
+ * the gate can never disagree with the bytes actually installed.
+ */
+export type TtsBackend = 'cuda' | 'rocm';
+
+let cachedBackend: TtsBackend | null | undefined;
+
+export const getBundledBackend = (): TtsBackend | null => {
+  if (cachedBackend !== undefined) return cachedBackend;
+  try {
+    const sitePackages = path.join(
+      getServerDir(), 'python_embedded', 'Lib', 'site-packages'
+    );
+    const torchInfo = fs
+      .readdirSync(sitePackages)
+      .find(e => /^torch-.*\.dist-info$/i.test(e));
+    cachedBackend = !torchInfo
+      ? null
+      : /rocm/i.test(torchInfo)
+        ? 'rocm'
+        : /\+cu\d+/i.test(torchInfo)
+          ? 'cuda'
+          : null;
+    console.log(
+      `[TTS Manager] Bundled backend: ${cachedBackend ?? 'none'} ` +
+      `(${torchInfo ?? 'no torch installed'})`
+    );
+  } catch {
+    cachedBackend = null;
+  }
+  return cachedBackend;
+};
+
+export interface TtsCapability {
+  supported: boolean;
+  backend: TtsBackend | null;
+  gpu: GpuInfo;
+  /** Human-readable reason when unsupported. */
+  reason?: string;
+}
+
+/**
+ * Single authority for "can this machine run the bundled voice engine":
+ * pairs the env's backend with the matching GPU vendor check. A CUDA env on
+ * an AMD-only machine (or vice versa) is correctly unsupported.
+ */
+export const detectTtsCapability = (): TtsCapability => {
+  const backend = getBundledBackend();
+  if (backend === 'cuda') {
+    const gpu = detectNvidiaGpu();
+    return {
+      supported: gpu.available,
+      backend,
+      gpu,
+      reason: gpu.available ? undefined : 'no NVIDIA GPU detected',
+    };
+  }
+  if (backend === 'rocm') {
+    const gpu = detectAmdGpu();
+    return {
+      supported: gpu.available,
+      backend,
+      gpu,
+      reason: gpu.available
+        ? undefined
+        : 'no supported AMD GPU (needs RX 7700 XT or newer / RX 9000 series)',
+    };
+  }
+  return {
+    supported: false,
+    backend: null,
+    gpu: { available: false },
+    reason: 'voice engine runtime not found',
+  };
 };
 
 // =============================================================================
@@ -173,9 +266,6 @@ export const fetchVoices = async (): Promise<string[]> => {
   return ['default'];
 };
 
-/** 'oliverbritmale.wav' -> 'oliverbritmale' for tolerant comparisons. */
-const voiceStem = (v: string): string => v.replace(/\.(wav|mp3)$/i, '');
-
 const buildConfig = (voices: string[]): LocalTTSConfig => {
   const match = voices.find(v => voiceStem(v) === DEFAULT_VOICE);
   return {
@@ -183,6 +273,48 @@ const buildConfig = (voices: string[]): LocalTTSConfig => {
     defaultVoice: match ?? voices[0] ?? DEFAULT_VOICE,
     availableVoices: voices,
   };
+};
+
+// =============================================================================
+// Voice Resolution
+// =============================================================================
+
+// The predefined-voice list is fixed for a given server run, so cache it and
+// avoid a localhost round-trip on every speak. A non-placeholder result is
+// cached; transient fetch failures ('default') leave the cache untouched.
+let voiceFileCache: string[] = [];
+
+const getVoiceFiles = async (forceRefresh = false): Promise<string[]> => {
+  if (!forceRefresh && voiceFileCache.length > 0) return voiceFileCache;
+  const voices = await fetchVoices();
+  const real = voices.filter(v => v && v !== 'default');
+  if (real.length > 0) voiceFileCache = real;
+  return voiceFileCache;
+};
+
+/**
+ * Resolve a renderer-supplied voice name ('narrator', 'Bodin', 'Malineth', …)
+ * to the exact predefined-voice filename the Chatterbox server expects
+ * ('Narrator.wav', 'Bodin.mp3', …). Matching is case-insensitive and
+ * extension-agnostic; unknown or missing names fall back to the narrator, then
+ * to any installed voice, so the server never receives a name it will 404 on.
+ * Returns null only when the server exposes no predefined voices at all.
+ * See ./voice-resolve for the matching rules.
+ */
+export const resolvePredefinedVoice = async (
+  requested?: string
+): Promise<string | null> => {
+  // Probe the cache without fallback so we can tell a genuine miss (e.g. a
+  // voice file added since the cache was primed) from a deliberate fallback.
+  let match = matchVoiceFile(await getVoiceFiles(), requested, false);
+  if (!match) {
+    match = matchVoiceFile(await getVoiceFiles(true), requested, false);
+  }
+  // Still nothing → narrator, then any available voice.
+  if (!match) {
+    match = matchVoiceFile(await getVoiceFiles(), FALLBACK_VOICE_STEM, true);
+  }
+  return match;
 };
 
 // =============================================================================
@@ -277,11 +409,9 @@ export const stopServer = (): void => {
 export const startServer = async (
   options?: StartServerOptions
 ): Promise<LocalTTSConfig> => {
-  const gpu = detectNvidiaGpu();
-  if (!gpu.available) {
-    throw new Error(
-      'No NVIDIA GPU detected. Chatterbox Turbo requires a CUDA-capable GPU.'
-    );
+  const cap = detectTtsCapability();
+  if (!cap.supported) {
+    throw new Error(cap.reason ?? 'no compatible GPU for the voice engine');
   }
   if (options?.signal?.aborted) {
     throw new Error('TTS startup cancelled');
@@ -318,7 +448,26 @@ export const startServer = async (
     HF_HOME: path.join(serverDir, 'hf_cache'),
     HF_HUB_OFFLINE: '1',
     TRANSFORMERS_OFFLINE: '1',
+    // ChatterboxTurboTTS.from_pretrained passes `token=True` to
+    // snapshot_download, which raises LocalTokenNotFoundError on any
+    // machine with no HF login - even fully offline. A placeholder
+    // satisfies that code path; HF_HUB_OFFLINE=1 means it is never sent.
+    HF_TOKEN: 'offline',
   };
+
+  if (cap.backend === 'rocm') {
+    // faster-whisper rides CTranslate2, which is CUDA-only for GPU. On ROCm,
+    // torch.cuda.is_available() is TRUE (HIP masquerades as CUDA), so the
+    // stt_addon's own fallback never triggers and STT would crash the server.
+    // Force CPU STT on AMD; TTS itself still runs on the GPU via HIP.
+    spawnEnv.STT_DEVICE = 'cpu';
+    spawnEnv.STT_COMPUTE_TYPE = 'int8';
+    // ROCm torch links LLVM OpenMP (libomp140) while CTranslate2 ships
+    // Intel OpenMP (libiomp5md); loading both aborts the process with OMP
+    // Error #15. Intel's documented escape hatch is the only way to run
+    // them in one process. CUDA builds don't hit this (single runtime).
+    spawnEnv.KMP_DUPLICATE_LIB_OK = 'TRUE';
+  }
 
   currentProcess = spawn(pythonExe, [serverScript], {
     stdio: ['ignore', 'pipe', 'pipe'],
@@ -327,16 +476,32 @@ export const startServer = async (
     cwd: serverDir,
   });
 
+  // One data event can carry several log lines; split so subscribers get one
+  // line at a time (the dialog renders them as individual rows).
+  const emitLines = (chunk: string): void => {
+    if (!options?.onLog) return;
+    for (const line of chunk.split(/\r?\n/)) {
+      const trimmed = line.trim();
+      if (trimmed) options.onLog(trimmed.slice(0, 300));
+    }
+  };
+
   if (currentProcess.stdout) {
     currentProcess.stdout.on('data', (buf: Buffer) => {
       const msg = buf.toString().trim();
-      if (msg) console.log(`[chatterbox-turbo] ${msg}`);
+      if (!msg) return;
+      console.log(`[voice-engine] ${msg}`);
+      emitLines(msg);
     });
   }
   if (currentProcess.stderr) {
     currentProcess.stderr.on('data', (buf: Buffer) => {
       const msg = buf.toString().trim();
-      if (msg) console.error(`[chatterbox-turbo err] ${msg}`);
+      if (!msg) return;
+      // The engine logs progress to stderr as well, so this is not an error
+      // channel in practice - forward it to the dialog like stdout.
+      console.error(`[voice-engine err] ${msg}`);
+      emitLines(msg);
     });
   }
 
@@ -352,8 +517,8 @@ export const startServer = async (
     // bring-up failures are reported by the caller (startup dialog).
     if (code !== 0 && code !== null && !shuttingDown && wasReady) {
       dialog.showErrorBox(
-        'TTS Engine Error',
-        `Chatterbox Turbo stopped unexpectedly (code ${code}).\n` +
+        'Voice Synthesis Error',
+        `The narrator voice engine stopped unexpectedly (code ${code}).\n` +
         'Voice features may not work. Restart the application.'
       );
     }

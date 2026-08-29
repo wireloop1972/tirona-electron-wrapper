@@ -8,6 +8,8 @@ build/
 
 # TTS server (Portable Mode – too large for git, ~4-6 GB)
 tts-server/
+# AMD ROCm variant of the TTS server env (built by setup-tts-server-amd.ps1)
+tts-server-amd/
 python_embedded/
 
 # Test outputs
@@ -47,8 +49,18 @@ steam_appid.txt
 # Splash video (62 MB, too large for git -- place manually)
 assets/TironaFading.mp4
 
+# Character-entry cutscene (delivered via Vercel Blob -> asset-pack, not git/ASAR)
+# Raw source + compressed staging copy; both too large for git.
+assets/ENTERTIRONA.mp4
+cutscenes/
+
 # Voice reference samples
 voices/
+# Pre-normalization originals (kept until the -18 LUFS wav set is proven)
+voices-originals-backup/
+# Raw voice takes dropped in for conversion (mp3 -> -18 LUFS 44.1k mono wav).
+# Source material only; the converted wavs in voices/ are what ship.
+importassets/
 
 # Stale/generated docs
 BUILD_SUCCESS.md

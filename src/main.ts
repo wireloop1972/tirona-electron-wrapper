@@ -1,6 +1,7 @@
 import {
   app,
   BrowserWindow,
+  clipboard,
   dialog,
   shell,
   ipcMain,
@@ -11,7 +12,6 @@ import {
 } from 'electron';
 import * as path from 'path';
 import * as fs from 'fs';
-import { detectNvidiaGpu } from './gpu-detect';
 import {
   startServer,
   stopServer,
@@ -19,8 +19,11 @@ import {
   getConfig,
   getBaseUrl,
   fetchVoices,
+  resolvePredefinedVoice,
   isServerInstalled,
   transcribeAudio,
+  detectTtsCapability,
+  getBundledBackend,
   type TTSGenerationParams,
   type LocalTTSConfig,
 } from './tts-manager';
@@ -59,8 +62,57 @@ let resolveStartupMenu: ((choice: StartupChoice | null) => void) | null = null;
 let startupTtsConfig: LocalTTSConfig | null = null;
 let ttsCheckAbort: AbortController | null = null;
 
+// Whether the player opted into Voice Synthesis for this launch. The game is a
+// remote web app carrying its own persisted TTS setting, so the shell cannot
+// let the renderer decide whether the server runs - this flag is the single
+// authority, set once when the startup dialog hands off to the game.
+let ttsAllowedThisLaunch = false;
+
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 let steamClient: any = null;
+
+// ─── Main-Process File Logging (packaged builds only) ────────────────────────
+// Beta testers can't see the console; without this, GPU-gate decisions and
+// server bring-up failures are invisible remotely. Mirrors console output to
+// %APPDATA%/Tirona/main.log (truncated at 2 MB on boot).
+
+const setupFileLog = (): void => {
+  if (!app.isPackaged) return;
+  try {
+    const logPath = path.join(app.getPath('userData'), 'main.log');
+    try {
+      if (fs.existsSync(logPath) && fs.statSync(logPath).size > 2_000_000) {
+        fs.unlinkSync(logPath);
+      }
+    } catch { /* rotation is best-effort */ }
+    const stream = fs.createWriteStream(logPath, { flags: 'a' });
+    const fmt = (a: unknown): string =>
+      a instanceof Error
+        ? (a.stack ?? a.message)
+        : typeof a === 'string'
+          ? a
+          : JSON.stringify(a);
+    const wrap =
+      (orig: (...args: unknown[]) => void, tag: string) =>
+        (...args: unknown[]): void => {
+          orig(...args);
+          try {
+            stream.write(
+              `${new Date().toISOString()} ${tag} ` +
+              `${args.map(fmt).join(' ')}\n`
+            );
+          } catch { /* logging must never break the app */ }
+        };
+    console.log = wrap(console.log.bind(console), 'LOG');
+    console.warn = wrap(console.warn.bind(console), 'WRN');
+    console.error = wrap(console.error.bind(console), 'ERR');
+    stream.write(
+      `\n===== ${new Date().toISOString()} app start ` +
+      `(v${app.getVersion()}) =====\n`
+    );
+  } catch { /* logging must never break startup */ }
+};
+setupFileLog();
 
 const initSteam = (): void => {
   try {
@@ -492,18 +544,23 @@ const showStartupMenu = (): Promise<StartupChoice | null> => {
   return new Promise((resolve) => {
     resolveStartupMenu = resolve;
 
+    // 720x880 default, 560x720 floor, per 50-launcher-spec.md. The window is
+    // frameless and draws its own leather strap, corner plates and controls,
+    // so the launcher and the in-game panel read as the same object.
     const { width, height } = screen.getPrimaryDisplay().workAreaSize;
-    const w = Math.min(620, width);
-    const h = Math.min(620, height);
+    const w = Math.min(720, width);
+    const h = Math.min(880, height);
 
     startupMenuWindow = new BrowserWindow({
       width: w,
       height: h,
+      minWidth: Math.min(560, width),
+      minHeight: Math.min(720, height),
       x: Math.floor((width - w) / 2),
       y: Math.floor((height - h) / 2),
       frame: false,
-      resizable: false,
-      backgroundColor: '#1a130e',
+      resizable: true,
+      backgroundColor: '#0d0b08',
       title: 'Tirona Rebirth',
       icon: getIconPath(),
       webPreferences: {
@@ -617,13 +674,14 @@ ipcMain.on('settings:open', () => {
 // ─── IPC: Startup Menu ───────────────────────────────────────────────────────
 
 ipcMain.handle('startup:get-info', () => {
-  const gpu = detectNvidiaGpu();
+  const cap = detectTtsCapability();
   const serverInstalled = isServerInstalled();
   return {
-    gpu,
+    gpu: cap.gpu,
+    backend: cap.backend,
     serverInstalled,
     ttsSupported:
-      process.platform === 'win32' && gpu.available && serverInstalled,
+      process.platform === 'win32' && cap.supported && serverInstalled,
   };
 });
 
@@ -660,11 +718,20 @@ const runTtsCheck = async (): Promise<void> => {
     phase: 'gpu' | 'spawn' | 'load' | 'generate' | 'play'
   ): void =>
     send('startup:ttsProgress', { phase, elapsedMs: Date.now() - t0 });
+  // Model load is the long pole of bring-up and its length depends entirely
+  // on the GPU, so the dialog shows live engine output next to the progress
+  // bar: real evidence of work rather than a bar that just sits there.
+  const logLine = (line: string): void => {
+    if (abort.signal.aborted) return;
+    send('startup:ttsLog', { line, elapsedMs: Date.now() - t0 });
+  };
 
   try {
     progress('gpu');
-    const gpu = detectNvidiaGpu();
-    if (!gpu.available) throw new Error('no NVIDIA GPU detected');
+    const cap = detectTtsCapability();
+    if (!cap.supported) {
+      throw new Error(cap.reason ?? 'no compatible GPU');
+    }
     if (!isServerInstalled()) throw new Error('voice engine not installed');
 
     progress('spawn');
@@ -672,15 +739,15 @@ const runTtsCheck = async (): Promise<void> => {
     const config = await startServer({
       signal: abort.signal,
       onSpawned: () => progress('load'),
+      onLog: logLine,
     });
     const modelLoadMs = Date.now() - spawnedAt;
     if (abort.signal.aborted) throw new Error('cancelled');
 
     progress('generate');
-    const intro = await generateNarratorIntro(
-      config.defaultVoice,
-      abort.signal
-    );
+    // Warm up + audibly test with the narrator voice specifically, so swapping
+    // the Narrator voice file later automatically changes what the test plays.
+    const intro = await generateNarratorIntro('narrator', abort.signal);
     if (abort.signal.aborted) throw new Error('cancelled');
     if (!intro.audioDataUrl) {
       throw new Error(intro.error ?? 'voice generation failed');
@@ -702,7 +769,13 @@ const runTtsCheck = async (): Promise<void> => {
     startupTtsConfig = null;
     if (!abort.signal.aborted) {
       console.error('[Startup] TTS check failed:', err);
-      send('startup:ttsResult', { success: false, reason: shortReason(err) });
+      let reason = shortReason(err);
+      if (getBundledBackend() === 'rocm') {
+        // Most AMD bring-up failures trace to the driver floor for the
+        // ROCm-on-Windows preview wheels; give the tester the fix inline.
+        reason += ' — AMD builds need Adrenalin driver 26.2.2 or newer';
+      }
+      send('startup:ttsResult', { success: false, reason });
     }
   } finally {
     if (ttsCheckAbort === abort) ttsCheckAbort = null;
@@ -734,8 +807,35 @@ ipcMain.handle(
   }
 );
 
+// The launcher window is frameless and draws its own controls in the strap.
+ipcMain.on('startup:minimize', () => {
+  if (startupMenuWindow && !startupMenuWindow.isDestroyed()) {
+    startupMenuWindow.minimize();
+  }
+});
+
+// Closing the launcher is closing the app: the 'closed' handler resolves the
+// startup promise with null and window-all-closed takes it from there.
+ipcMain.on('startup:close', () => {
+  if (startupMenuWindow && !startupMenuWindow.isDestroyed()) {
+    startupMenuWindow.close();
+  }
+});
+
+// Raw voice-server output, offered from the failure state only. It belongs on
+// the clipboard for support, not on screen in a player-facing surface.
+ipcMain.on('startup:copyDiagnostics', (_e, text: string) => {
+  const body = typeof text === 'string' ? text : '';
+  clipboard.writeText(
+    `Tirona voice bring-up diagnostics\n` +
+    `backend: ${getBundledBackend()}\n` +
+    `platform: ${process.platform} ${process.arch}\n` +
+    `app: ${app.getVersion()}\n\n${body}`
+  );
+});
+
 ipcMain.handle('startup:launchGame', () => {
-  // Defensive: Launch should be unreachable while the overlay is up, but if
+  // Defensive: Begin should be unreachable while the load modal is up, but if
   // a check is somehow still running, treat launching as cancelling it.
   if (ttsCheckAbort) {
     ttsCheckAbort.abort();
@@ -743,6 +843,7 @@ ipcMain.handle('startup:launchGame', () => {
     startupTtsConfig = null;
     stopServer();
   }
+  ttsAllowedThisLaunch = startupTtsConfig !== null;
   if (resolveStartupMenu) {
     const r = resolveStartupMenu;
     resolveStartupMenu = null;
@@ -753,12 +854,20 @@ ipcMain.handle('startup:launchGame', () => {
 
 // ─── IPC: TTS ────────────────────────────────────────────────────────────────
 
-ipcMain.handle('tts:gpuAvailable', () => detectNvidiaGpu());
+ipcMain.handle('tts:gpuAvailable', () => detectTtsCapability().gpu);
 
 ipcMain.handle('tts:isInstalled', () => isServerInstalled());
 
 ipcMain.handle('tts:start', async () => {
   console.log('[IPC] tts:start');
+  // The player declined Voice Synthesis in the startup dialog (or never saw
+  // it). Refuse rather than spawn: the game's own persisted TTS setting must
+  // not be able to bring the server up behind the player's back. Null reads
+  // as "no config" on the renderer side, i.e. TTS unavailable this session.
+  if (!ttsAllowedThisLaunch) {
+    console.log('[IPC] tts:start refused - Voice Synthesis off for this launch');
+    return null;
+  }
   try {
     const config = await startServer();
     if (mainWindow && !mainWindow.isDestroyed()) {
@@ -818,6 +927,21 @@ ipcMain.handle(
       );
     }
 
+    // Map the renderer's voice name ('narrator', 'Bodin', 'Malineth', …) to the
+    // exact predefined-voice filename Chatterbox expects ('Narrator.wav',
+    // 'Bodin.mp3', …). Case-insensitive, extension-agnostic, with a narrator
+    // fallback so an unknown name never 404s. Both endpoints match a voice by
+    // exact filename, so this must run for the /tts and /v1/audio/speech paths.
+    const resolvedVoice = await resolvePredefinedVoice(voice);
+    if (resolvedVoice && resolvedVoice !== voice) {
+      console.log(`[IPC] tts:speak – voice '${voice}' -> '${resolvedVoice}'`);
+    } else if (!resolvedVoice) {
+      console.warn(
+        `[IPC] tts:speak – server reports no predefined voices; ` +
+        `request for '${voice}' will likely fail`
+      );
+    }
+
     try {
       const hasParams =
         params &&
@@ -831,10 +955,9 @@ ipcMain.handle(
 
       if (hasParams) {
         const body: Record<string, unknown> = { text };
-        if (voice && voice !== 'default') {
+        if (resolvedVoice) {
           body.voice_mode = 'predefined';
-          const voiceFile = voice.endsWith('.wav') ? voice : `${voice}.wav`;
-          body.predefined_voice_id = voiceFile;
+          body.predefined_voice_id = resolvedVoice;
         }
         body.output_format = 'wav';
         if (params.exaggeration !== undefined)
@@ -859,8 +982,8 @@ ipcMain.handle(
           input: text,
           response_format: 'wav',
         };
-        if (voice && voice !== 'default') {
-          body.voice = voice.endsWith('.wav') ? voice : `${voice}.wav`;
+        if (resolvedVoice) {
+          body.voice = resolvedVoice;
         }
 
         response = await fetch(`${baseUrl}/v1/audio/speech`, {
@@ -1097,20 +1220,16 @@ const generateNarratorIntro = async (
   const t0 = Date.now();
   try {
     // The /v1/audio/speech endpoint requires a real predefined voice file;
-    // there is no server-side default. Resolve 'default' to an actual voice.
-    let voiceFile = voice;
-    if (!voiceFile || voiceFile === 'default') {
-      const voices = await fetchVoices();
-      voiceFile = voices.find(v => v !== 'default') ?? '';
-      if (!voiceFile) {
-        return {
-          audioDataUrl: null,
-          firstAudioMs: 0,
-          error: 'no predefined voices installed on the voice server',
-        };
-      }
+    // there is no server-side default. Resolve the requested name to an exact
+    // filename ('narrator' -> 'Narrator.wav'), falling back to any voice.
+    const voiceFile = await resolvePredefinedVoice(voice);
+    if (!voiceFile) {
+      return {
+        audioDataUrl: null,
+        firstAudioMs: 0,
+        error: 'no predefined voices installed on the voice server',
+      };
     }
-    if (!/\.(wav|mp3)$/i.test(voiceFile)) voiceFile = `${voiceFile}.wav`;
 
     const body: Record<string, string> = {
       model: 'turbo',
@@ -1179,18 +1298,24 @@ app.whenReady().then(async () => {
     );
   }
 
-  const gpu = detectNvidiaGpu();
+  const cap = detectTtsCapability();
   const installed = isServerInstalled();
   const ttsAvailable =
-    process.platform === 'win32' && gpu.available && installed;
+    process.platform === 'win32' && cap.supported && installed;
 
   console.log('=== TTS STATUS ===');
-  console.log(`  GPU: ${gpu.available ? gpu.gpuName : 'none'}`);
+  console.log(`  Backend: ${cap.backend ?? 'none'}`);
+  console.log(
+    `  GPU: ${cap.gpu.available ? cap.gpu.gpuName : `none (${cap.reason})`}`
+  );
   console.log(`  Server installed: ${installed}`);
   console.log(`  TTS available: ${ttsAvailable}`);
   console.log('==================');
 
   if (process.env.TTS_TEST === 'true') {
+    // The test harness skips the startup dialog, so grant TTS explicitly or
+    // its tts:start calls would be refused by the gate above.
+    ttsAllowedThisLaunch = true;
     await createWindow();
   } else {
     // Pre-game configuration: nothing else opens until the player clicks
