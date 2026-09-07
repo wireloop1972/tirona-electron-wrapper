@@ -12,6 +12,7 @@ import {
 } from 'electron';
 import * as path from 'path';
 import * as fs from 'fs';
+import { registerStartupAssets } from './startup-assets';
 import {
   startServer,
   stopServer,
@@ -32,6 +33,8 @@ import {
   getStaticPackPath,
   loadBundledManifest,
   buildBlobLookup,
+  buildSceneLookup,
+  serveSceneAsset,
   getMimeType,
   isStaticAssetPath,
   resolveStaticAsset,
@@ -544,18 +547,16 @@ const showStartupMenu = (): Promise<StartupChoice | null> => {
   return new Promise((resolve) => {
     resolveStartupMenu = resolve;
 
-    // 720x880 default, 560x720 floor, per 50-launcher-spec.md. The window is
-    // frameless and draws its own leather strap, corner plates and controls,
-    // so the launcher and the in-game panel read as the same object.
+    // A wide study-and-book composition; the compact layout fits 900x600.
     const { width, height } = screen.getPrimaryDisplay().workAreaSize;
-    const w = Math.min(720, width);
-    const h = Math.min(880, height);
+    const w = Math.min(1440, width);
+    const h = Math.min(900, height);
 
     startupMenuWindow = new BrowserWindow({
       width: w,
       height: h,
-      minWidth: Math.min(560, width),
-      minHeight: Math.min(720, height),
+      minWidth: Math.min(900, width),
+      minHeight: Math.min(600, height),
       x: Math.floor((width - w) / 2),
       y: Math.floor((height - h) / 2),
       frame: false,
@@ -921,9 +922,15 @@ ipcMain.handle(
       return { success: false, error: 'TTS server not running' };
     }
 
-    if (text.length > 300) {
+    // Turbo decodes at most max_gen_len=1000 speech tokens (t3.py inference_turbo)
+    // and S3_TOKEN_RATE is 25/s, so ~40s of audio is the hard ceiling: past it the
+    // waveform simply stops mid-sentence and the tail is lost silently. Measured
+    // ~16.3 chars per second of speech, so ~650 chars. Warn with margin. (The old
+    // ">300 chars may hallucinate" note was folklore from the original model.)
+    if (text.length > 600) {
       console.warn(
-        `[IPC] Text is ${text.length} chars – Turbo may hallucinate >300`
+        `[IPC] Text is ${text.length} chars – Turbo caps at ~40s of audio ` +
+        `(~650 chars); the tail may be cut`
       );
     }
 
@@ -1104,6 +1111,7 @@ const registerAssetInterceptor = (): void => {
     ? buildBlobLookup(manifest, assetPackDir)
     : new Map<string, string>();
   interceptorAssetCount = lookup.size;
+  const sceneLookup = manifest ? buildSceneLookup(manifest, assetPackDir) : new Map<string, string>();
 
   interceptorStaticReady = fs.existsSync(staticPackDir);
 
@@ -1118,6 +1126,8 @@ const registerAssetInterceptor = (): void => {
 
   ses.protocol.handle('https', async (request: Request) => {
     try {
+      const sceneResponse = serveSceneAsset(request.url, appUrl, sceneLookup);
+      if (sceneResponse) return sceneResponse;
       const blobMatch = request.url.match(
         /https:\/\/[^/]+\.blob\.vercel-storage\.com\/([^?]+)/
       );
@@ -1125,6 +1135,11 @@ const registerAssetInterceptor = (): void => {
       if (blobMatch) {
         const blobPathname = decodeURIComponent(blobMatch[1]);
         const localPath = lookup.get(blobPathname);
+
+        if (blobPathname.startsWith('assets/scenes/') && (!localPath || !fs.existsSync(localPath))) {
+          console.error(`[ScenePack] Missing installed Blob asset: ${blobPathname}`);
+          return new Response('Required scene asset missing; verify Steam installation.', { status: 503 });
+        }
 
         if (localPath && fs.existsSync(localPath)) {
           console.log(`[Interceptor] Blob hit: ${blobPathname}`);
@@ -1283,6 +1298,7 @@ const generateNarratorIntro = async (
 // ─── App Lifecycle ───────────────────────────────────────────────────────────
 
 app.whenReady().then(async () => {
+  registerStartupAssets();
   Menu.setApplicationMenu(null);
   setupDeepLinking();
   initSteam();

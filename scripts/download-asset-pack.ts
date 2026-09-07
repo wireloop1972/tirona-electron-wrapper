@@ -18,6 +18,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import * as https from 'https';
 import * as http from 'http';
+import { createHash } from 'crypto';
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
@@ -27,6 +28,9 @@ interface AssetEntry {
   hash: string;
   size: number;
   category: 'glb' | 'hdri' | 'texture' | 'other';
+  sha256?: string;
+  requestPath?: string;
+  source?: string;
 }
 
 interface AssetManifest {
@@ -48,6 +52,14 @@ const OUTPUT_DIR = path.resolve(
 );
 
 const CONCURRENCY = Number(process.env.CONCURRENCY ?? '6');
+const BATTLEMAP_DIR = path.resolve(process.env.BATTLEMAP_PATH ?? path.join(__dirname, '..', '..', 'Battlemap'));
+const sha256 = (file: string) => createHash('sha256').update(fs.readFileSync(file)).digest('hex');
+const safePath = (root: string, relative: string) => {
+  const target = path.resolve(root, relative);
+  const within = path.relative(root, target);
+  if (within.startsWith('..') || path.isAbsolute(within)) throw new Error(`Unsafe asset path: ${relative}`);
+  return target;
+};
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -153,6 +165,16 @@ const main = async () => {
   // 1. Fetch manifest
   console.log('Fetching manifest...');
   const manifest = await fetchJson(MANIFEST_URL);
+  // The sibling release inventory is authoritative even before the web deployment.
+  // Seed exact optimized bytes locally instead of re-downloading our own uploads.
+  const sceneInventoryPath = path.join(BATTLEMAP_DIR, 'data/assets/scene-pack.json');
+  if (!fs.existsSync(sceneInventoryPath)) throw new Error(`Missing scene release inventory: ${sceneInventoryPath}`);
+  const sceneInventory = JSON.parse(fs.readFileSync(sceneInventoryPath, 'utf8')) as { assets: AssetEntry[] };
+  const sceneIds = new Set(sceneInventory.assets.map(a => a.id));
+  manifest.assets = [...manifest.assets.filter(a => !a.id.startsWith('assets/scenes/')), ...sceneInventory.assets];
+  manifest.required = [...new Set([...manifest.required.filter(id => !id.startsWith('assets/scenes/')), ...sceneIds])];
+  manifest.assetPackVersion = createHash('sha256').update(manifest.assets.map(a => a.hash).sort().join('')).digest('hex').slice(0, 16);
+  manifest.generatedAt = new Date().toISOString();
   console.log(
     `  Version    : ${manifest.assetPackVersion}`
   );
@@ -169,6 +191,9 @@ const main = async () => {
 
   // 2. Filter to required assets only
   const requiredSet = new Set(manifest.required);
+  for (const id of requiredSet) {
+    if (!manifest.assets.some(a => a.id === id)) throw new Error(`Required asset absent from manifest: ${id}`);
+  }
   const required = manifest.assets.filter((a) => requiredSet.has(a.id));
 
   // The manifest can list one id twice: a legacy blob still carrying its upload
@@ -190,6 +215,7 @@ const main = async () => {
       byId.set(a.id, a);
       continue;
     }
+    if ((a.sha256 || seen.sha256) && a.sha256 !== seen.sha256) throw new Error(`Conflicting asset hashes: ${a.id}`);
     const keep =
       isCanonical(a) !== isCanonical(seen)
         ? (isCanonical(a) ? a : seen)
@@ -224,8 +250,6 @@ const main = async () => {
 
   // 4. Save manifest
   const manifestDest = path.join(OUTPUT_DIR, 'manifest.json');
-  fs.writeFileSync(manifestDest, JSON.stringify(manifest, null, 2), 'utf-8');
-  console.log(`  Saved manifest.json`);
 
   // 5. Download assets with concurrency pool
   let completed = 0;
@@ -234,12 +258,12 @@ const main = async () => {
   const errors: string[] = [];
 
   await runPool(toDownload, CONCURRENCY, async (asset, _i) => {
-    const dest = path.join(OUTPUT_DIR, asset.id);
+    const dest = safePath(OUTPUT_DIR, asset.id);
 
     // Skip if already downloaded and correct size
     if (fs.existsSync(dest)) {
       const stat = fs.statSync(dest);
-      if (asset.size > 0 && stat.size === asset.size) {
+      if (asset.size > 0 && stat.size === asset.size && (!asset.sha256 || sha256(dest) === asset.sha256)) {
         completed++;
         downloadedBytes += asset.size;
         const pct = ((completed + failed) / toDownload.length * 100).toFixed(0);
@@ -251,7 +275,18 @@ const main = async () => {
     }
 
     try {
-      await downloadFile(asset.url, dest, asset.size);
+      const temp = dest + '.partial';
+      if (sceneIds.has(asset.id)) {
+        if (!asset.source || !asset.sha256) throw new Error(`Incomplete scene entry: ${asset.id}`);
+        const source = safePath(BATTLEMAP_DIR, asset.source);
+        if (sha256(source) !== asset.sha256) throw new Error(`Scene changed after publication: ${asset.source}`);
+        fs.mkdirSync(path.dirname(temp), { recursive: true });
+        fs.copyFileSync(source, temp);
+      } else {
+        await downloadFile(asset.url, temp, asset.size);
+      }
+      if (asset.sha256 && sha256(temp) !== asset.sha256) throw new Error(`SHA-256 mismatch: ${asset.id}`);
+      fs.renameSync(temp, dest);
       completed++;
       downloadedBytes += asset.size;
     } catch (err) {
@@ -282,6 +317,9 @@ const main = async () => {
     for (const e of errors) console.error(`  - ${e}`);
     process.exit(1);
   }
+
+  fs.writeFileSync(manifestDest + '.partial', JSON.stringify(manifest, null, 2), 'utf-8');
+  fs.renameSync(manifestDest + '.partial', manifestDest);
 
   console.log('\nAsset pack ready for packaging.');
 };

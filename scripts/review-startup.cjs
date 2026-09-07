@@ -1,0 +1,54 @@
+const {app,BrowserWindow,ipcMain}=require('electron');
+const path=require('path');
+const fs=require('fs');
+const {registerStartupAssets}=require('../dist/startup-assets');
+const assert=require('assert/strict');
+let launched=0,ttsSupported=true;
+ipcMain.handle('startup:get-info',()=>({ttsSupported}));
+ipcMain.handle('startup:beginTtsCheck',()=>({ok:true}));
+ipcMain.handle('startup:cancelTtsCheck',()=>({ok:true}));
+ipcMain.handle('startup:reportAudioFinished',()=>({ok:true}));
+ipcMain.handle('startup:launchGame',()=>{launched++;return {ok:true};});
+ipcMain.on('startup:copyDiagnostics',()=>{});
+app.whenReady().then(async()=>{
+ registerStartupAssets();
+ const win=new BrowserWindow({width:1440,height:900,show:false,webPreferences:{offscreen:true,backgroundThrottling:false,preload:path.resolve('dist/startup-menu-preload.js'),contextIsolation:true,nodeIntegration:false}});
+ const errors=[];win.webContents.on('console-message',(_e,level,message)=>{if(level>=2)console.log(message);if(level>=3)errors.push(message);});
+ await win.loadFile(path.resolve('src/startup-menu.html'));
+ const wait=ms=>new Promise(r=>setTimeout(r,ms));
+ for(let n=0;n<80;n++){if(await win.webContents.executeJavaScript('document.body.classList.contains("scene-ready")'))break;await wait(250);}
+ assert(await win.webContents.executeJavaScript('document.body.classList.contains("scene-ready")'),'3D study failed to load');
+ fs.mkdirSync('release/startup-review',{recursive:true});
+ const capture=async name=>fs.writeFileSync(`release/startup-review/${name}.png`,(await win.webContents.capturePage()).toPNG());
+ await wait(1800);await capture('01-invitation');
+ await win.webContents.executeJavaScript('document.querySelector("input[value=spoken]").checked=true;document.getElementById("begin").click()');
+ await wait(2200);await capture('02-open-book');
+ await wait(2400);await capture('03-turning-page');
+ win.webContents.send('startup:ttsResult',{success:false,reason:'Review test failure'});
+ await wait(200);assert(await win.webContents.executeJavaScript('!document.getElementById("retry").hidden'));
+ await capture('04-voice-unavailable');
+ await win.webContents.executeJavaScript('document.getElementById("skip").click()');
+ for(let n=0;n<30&&!launched;n++)await wait(250);
+ assert.equal(launched,1,'Written-narration recovery must launch once');
+ // A completed voice sample during a turn must wait for the sheet to land.
+ await win.reload();await wait(2200);launched=0;
+ await win.webContents.executeJavaScript('document.querySelector("input[value=spoken]").checked=true;document.getElementById("begin").click()',true);
+ await wait(4200);
+ const wav=Buffer.alloc(44+1600);wav.write('RIFF');wav.writeUInt32LE(wav.length-8,4);wav.write('WAVE',8);wav.write('fmt ',12);wav.writeUInt32LE(16,16);wav.writeUInt16LE(1,20);wav.writeUInt16LE(1,22);wav.writeUInt32LE(8000,24);wav.writeUInt32LE(16000,28);wav.writeUInt16LE(2,32);wav.writeUInt16LE(16,34);wav.write('data',36);wav.writeUInt32LE(1600,40);
+ win.webContents.send('startup:ttsResult',{success:true,audioDataUrl:'data:audio/wav;base64,'+wav.toString('base64'),metrics:{modelLoadMs:100,firstAudioMs:100}});
+ await wait(400);assert.equal(launched,0,'Voice completion cut a page turn short');
+ await capture('05-ready-during-turn');
+ for(let n=0;n<32&&!launched;n++)await wait(250);
+ assert.equal(launched,1,'Voice success failed to launch');
+ // Compact window and unsupported voice must keep the primary action accessible.
+ ttsSupported=false;win.setSize(900,600);await win.loadFile(path.resolve('src/startup-menu.html'));await wait(2500);launched=0;
+ assert(await win.webContents.executeJavaScript('document.querySelector("input[value=spoken]").disabled'));
+ const fits=await win.webContents.executeJavaScript('document.getElementById("begin").getBoundingClientRect().bottom < innerHeight-30');
+ assert(fits,'Begin falls below compact window');await capture('06-compact');
+ await win.webContents.executeJavaScript('document.getElementById("begin").click()');
+ for(let n=0;n<24&&!launched;n++)await wait(250);
+ assert.equal(launched,1);
+ assert.deepEqual(errors,[]);
+ console.log('PASS: local 3D room, book opening/turning, voice failure and written-narration recovery; no renderer errors.');
+ app.exit(0);
+}).catch(e=>{console.error(e);app.exit(1);});

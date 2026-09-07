@@ -19,6 +19,8 @@ export interface AssetEntry {
   hash: string;
   size: number;
   category: 'glb' | 'hdri' | 'texture' | 'other';
+  sha256?: string;
+  requestPath?: string;
 }
 
 export interface AssetManifest {
@@ -31,6 +33,7 @@ export interface AssetManifest {
 
 const MIME_TYPES: Record<string, string> = {
   '.glb': 'model/gltf-binary',
+  '.json': 'application/json',
   '.gltf': 'model/gltf+json',
   '.hdr': 'application/octet-stream',
   '.exr': 'application/octet-stream',
@@ -120,6 +123,33 @@ export const buildBlobLookup = (
     }
   }
   return lookup;
+};
+
+/** Same-origin model URLs must hit the installed pack before any HTTP redirect. */
+export const buildSceneLookup = (manifest: AssetManifest, dir: string): Map<string, string> => {
+  const lookup = new Map<string, string>();
+  for (const asset of manifest.assets) {
+    if (!asset.requestPath) continue;
+    const file = path.resolve(dir, asset.id);
+    const relative = path.relative(path.resolve(dir), file);
+    if (relative.startsWith('..') || path.isAbsolute(relative)) throw new Error('Invalid asset destination');
+    if (lookup.has(asset.requestPath)) throw new Error(`Duplicate scene alias: ${asset.requestPath}`);
+    lookup.set(asset.requestPath, file);
+  }
+  return lookup;
+};
+
+export const serveSceneAsset = (url: string, appUrl: string, lookup: Map<string, string>): Response | null => {
+  if (new URL(url).origin !== new URL(appUrl).origin) return null;
+  const pathname = decodeURIComponent(new URL(url).pathname);
+  const file = lookup.get(pathname);
+  if (!file) return null;
+  if (!fs.existsSync(file)) {
+    console.error(`[ScenePack] Missing installed asset: ${pathname}`);
+    return new Response('Required scene asset missing; verify Steam installation.', { status: 503 });
+  }
+  return new Response(fs.readFileSync(file), { status: 200,
+    headers: { 'Content-Type': getMimeType(file), 'X-Tirona-Asset-Source': 'steam' } });
 };
 
 /**

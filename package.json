@@ -11,7 +11,7 @@
   "license": "MIT",
   "private": true,
   "scripts": {
-    "build": "tsc",
+    "build": "tsc && node scripts/build-startup.cjs",
     "lint": "eslint src --ext .ts",
     "dev": "npm run build && cross-env APP_ENV=dev electron .",
     "dev:electron": "npm run build && cross-env APP_ENV=dev electron .",
@@ -25,7 +25,10 @@
     "setup:tts": "powershell -ExecutionPolicy Bypass -File scripts/setup-tts-server.ps1",
     "download:assets": "npx ts-node scripts/download-asset-pack.ts",
     "copy:static": "powershell -ExecutionPolicy Bypass -File scripts/copy-static-pack.ps1",
-    "package:steam": "npm run build && npm run download:assets && npm run copy:static && cross-env APP_ENV=prod electron-builder --win --dir"
+    "verify:scenes": "electron scripts/check-scene-pack.cjs asset-pack",
+    "verify:packaged-scenes": "electron scripts/check-scene-pack.cjs release/win-unpacked/resources/asset-pack",
+    "verify:startup": "electron scripts/review-startup.cjs",
+    "package:steam": "npm run build && npm run download:assets && npm run verify:scenes && npm run verify:startup && npm run copy:static && cross-env APP_ENV=prod electron-builder --win --dir && npm run verify:packaged-scenes"
   },
   "devDependencies": {
     "@types/node": "^20.10.0",

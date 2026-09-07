@@ -12,6 +12,8 @@ files:
   - package.json
   - src/splash.html
   - src/startup-menu.html
+  - src/startup-fonts.css
+  - src/startup-menu.css
   # source woff2 + the SIL OFL licence texts, which must accompany any build
   # carrying the embedded faces
   - src/fonts/**/*
