@@ -166,7 +166,7 @@ const main = async () => {
   console.log('Fetching manifest...');
   const manifest = await fetchJson(MANIFEST_URL);
   // The sibling release inventory is authoritative even before the web deployment.
-  // Seed exact optimized bytes locally instead of re-downloading our own uploads.
+  // Fetch bytes from Blob; the sibling repository supplies release metadata only.
   const sceneInventoryPath = path.join(BATTLEMAP_DIR, 'data/assets/scene-pack.json');
   if (!fs.existsSync(sceneInventoryPath)) throw new Error(`Missing scene release inventory: ${sceneInventoryPath}`);
   const sceneInventory = JSON.parse(fs.readFileSync(sceneInventoryPath, 'utf8')) as { assets: AssetEntry[] };
@@ -276,15 +276,12 @@ const main = async () => {
 
     try {
       const temp = dest + '.partial';
-      if (sceneIds.has(asset.id)) {
-        if (!asset.source || !asset.sha256) throw new Error(`Incomplete scene entry: ${asset.id}`);
-        const source = safePath(BATTLEMAP_DIR, asset.source);
-        if (sha256(source) !== asset.sha256) throw new Error(`Scene changed after publication: ${asset.source}`);
-        fs.mkdirSync(path.dirname(temp), { recursive: true });
-        fs.copyFileSync(source, temp);
-      } else {
-        await downloadFile(asset.url, temp, asset.size);
+      if (sceneIds.has(asset.id) && !asset.sha256) throw new Error(`Incomplete scene entry: ${asset.id}`);
+      const sourceUrl = new URL(asset.url);
+      if (sourceUrl.protocol !== 'https:' || !sourceUrl.hostname.endsWith('.public.blob.vercel-storage.com')) {
+        throw new Error(`Asset must come from Vercel Blob: ${asset.id}`);
       }
+      await downloadFile(asset.url, temp, asset.size);
       if (asset.sha256 && sha256(temp) !== asset.sha256) throw new Error(`SHA-256 mismatch: ${asset.id}`);
       fs.renameSync(temp, dest);
       completed++;

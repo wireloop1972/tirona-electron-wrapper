@@ -1136,7 +1136,10 @@ const registerAssetInterceptor = (): void => {
         const blobPathname = decodeURIComponent(blobMatch[1]);
         const localPath = lookup.get(blobPathname);
 
-        if (blobPathname.startsWith('assets/scenes/') && (!localPath || !fs.existsSync(localPath))) {
+        // A known packaged file missing on disk means a damaged installation.
+        // An unknown immutable URL is a new release asset: allow Blob fallback
+        // so the web asset sync can persist it in its existing cache.
+        if (blobPathname.startsWith('assets/scenes/') && localPath && !fs.existsSync(localPath)) {
           console.error(`[ScenePack] Missing installed Blob asset: ${blobPathname}`);
           return new Response('Required scene asset missing; verify Steam installation.', { status: 503 });
         }
