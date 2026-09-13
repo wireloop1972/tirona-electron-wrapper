@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { MeshoptDecoder } from 'three/addons/libs/meshopt_decoder.module.js';
+import { bendStartupLeaf } from './startup-leaf.mjs';
 
 const el = id => document.getElementById(id);
 const api = window.startupAPI;
@@ -133,7 +134,10 @@ async function createStudy() {
   const cover=new THREE.Group();book.add(cover);
   const coverGeo=new THREE.PlaneGeometry(W+.08,D+.1);coverGeo.rotateX(-Math.PI/2);coverGeo.translate(W/2,.085,0);
   const coverTexture=await loadTexture('/launcher/cover.png');
-  const coverMesh=new THREE.Mesh(coverGeo,new THREE.MeshStandardMaterial({map:coverTexture,roughness:.8,side:THREE.DoubleSide}));coverMesh.castShadow=true;cover.add(coverMesh);
+  const coverMesh=new THREE.Mesh(coverGeo,new THREE.MeshStandardMaterial({map:coverTexture,roughness:.8,side:THREE.FrontSide}));coverMesh.castShadow=true;cover.add(coverMesh);
+  // The cover illustration belongs only to the outside. Its reverse is paper.
+  const coverLining=new THREE.Mesh(coverGeo,new THREE.MeshStandardMaterial({color:'#fff5df',roughness:1,side:THREE.BackSide}));
+  cover.add(coverLining);
   textures=await Promise.all(Array.from({length:8},(_,i)=>loadTexture(`/images/module-leaves/${i+1}.webp`)));
   for(const t of textures)renderer.initTexture(t);renderer.initTexture(coverTexture);
   await roomPromise;ready=true;document.body.classList.add('scene-ready');
@@ -163,8 +167,7 @@ async function createStudy() {
     if(state==='leaving')t=frozenTurn;else lastTurnProgress=t;
     const maps=[textures[spread%8],textures[(spread+(moving.visible?3:1))%8],textures[(spread+1)%8],textures[(spread+2)%8]];
     [pages[0].material,pages[1].material,...fronts].forEach((m,i)=>{if(!m.map)m.needsUpdate=true;m.map=maps[i];});
-    const angle=smooth(t)*Math.PI;
-    for(const g of [paper,reverse]){const p=g.attributes.position;for(let i=0;i<p.count;i++){const u=paper.attributes.uv.getX(i),x=W*u,curl=Math.sin(t*Math.PI)*Math.sin(u*Math.PI)*.18;p.setXYZ(i,x*Math.cos(angle)-curl*Math.sin(angle),x*Math.sin(angle)+curl*Math.cos(angle),(.5-paper.attributes.uv.getY(i))*D);}p.needsUpdate=true;g.computeVertexNormals();}
+    for(const g of [paper,reverse])bendStartupLeaf(g,paper.attributes.uv,W,D,t);
     renderer.setViewport(0,0,innerWidth,innerHeight);renderer.clear();renderer.render(scene,bookCamera);
     requestAnimationFrame(frame);
   }

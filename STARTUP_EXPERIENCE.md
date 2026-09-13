@@ -20,3 +20,26 @@ the actual TTS server. Screenshots are saved under `release/startup-review/`.
 Run `npm run dev` for an interactive review with the actual narrator service.
 `npm run package:steam` runs startup verification and includes the launcher in the
 Windows package. No Steam upload or web deployment is triggered by this command.
+
+September 10 landing fix: `src/startup-leaf.mjs` derives curl from the eased
+rotation angle, matching the approved menu correction. Previously the curl
+outlasted the rotation and pushed the sheet through the resting left page,
+briefly exposing the previous image. The updated bounds follow the moving sheet.
+`node scripts/check-startup-leaf.cjs` verifies 1,001 poses, no penetration,
+coincident printed faces, landing UV alignment and bounds. Build and startup
+renderer checks passed. The packaged ASAR differs from the previous Steam
+release only in `dist/startup-scene.js`; both GPU variants use that code depot.
+
+Uploaded to Steam App 4503860 on September 10, 2026, without setting a branch
+live: default/CUDA BuildID **25230853**, AMD/ROCm BuildID **25230963**. Both use
+code manifest **7131159855825769087** (one ASAR changed, approximately 1 MB delta).
+The existing asset, static and GPU-specific TTS content was preserved; 409 staged
+scene assets passed local alias/Blob routing and SHA-256 checks against their
+shipped manifest. No web deployment was performed. The owner will set the builds
+live in Steamworks.
+
+September 13: the opening cover now renders its artwork only on its outer face,
+with a separate plain paper reverse. Startup renderer checks and the 1,001-pose
+leaf check passed. The ASAR comparison against the staged release confirmed that
+only `dist/startup-scene.js` changed. The shared in-game menu separately disables
+raycasting on hidden illustrated leaves and the decorative book halo.
