@@ -43,3 +43,8 @@ with a separate plain paper reverse. Startup renderer checks and the 1,001-pose
 leaf check passed. The ASAR comparison against the staged release confirmed that
 only `dist/startup-scene.js` changed. The shared in-game menu separately disables
 raycasting on hidden illustrated leaves and the decorative book halo.
+
+Both September 13 builds uploaded successfully without SetLive: NVIDIA/CUDA
+**25279544**, AMD/ROCm **25279565**. Shared code manifest:
+**8100373849883008905**. The web menu fix is live from Battlemap commit
+`e6798534` (Vercel deployment `dpl_FPxj9EsDUkLp9mYaMmmnvx3gLQne`).
