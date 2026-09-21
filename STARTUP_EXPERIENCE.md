@@ -48,3 +48,15 @@ Both September 13 builds uploaded successfully without SetLive: NVIDIA/CUDA
 **25279544**, AMD/ROCm **25279565**. Shared code manifest:
 **8100373849883008905**. The web menu fix is live from Battlemap commit
 `e6798534` (Vercel deployment `dpl_FPxj9EsDUkLp9mYaMmmnvx3gLQne`).
+
+September 21: the startup book was rebuilt to match the in-game menu's new
+module (Battlemap commit `8d934166`). `src/startup-book.mjs` is a plain
+Three.js port of `components/charselect/ModuleBook.tsx`: rounded leather boards
+with a grain bump map, a spine strip that unrolls as the cover opens so the
+front board lands flat on the felt, a page block split into two halves so the
+book stands open at its middle with equal stacks meeting in a shaded gutter, and
+printed page edges. `src/startup-leaf.mjs` now takes an angle and a resting
+profile, with the curl lifting the free corner first; `node
+scripts/check-startup-leaf.cjs` verifies 1,001 poses against that profile.
+`npm run verify:startup` passed; screenshots under `release/startup-review/`.
+Not yet uploaded to Steam.

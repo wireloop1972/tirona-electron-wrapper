@@ -1,7 +1,9 @@
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { MeshoptDecoder } from 'three/addons/libs/meshopt_decoder.module.js';
-import { bendStartupLeaf } from './startup-leaf.mjs';
+import { RoundedBoxGeometry } from 'three/addons/geometries/RoundedBoxGeometry.js';
+import { turnEase } from './startup-leaf.mjs';
+import { createStartupBook } from './startup-book.mjs';
 
 const el = id => document.getElementById(id);
 const api = window.startupAPI;
@@ -114,30 +116,14 @@ async function createStudy() {
   const tableScale=5.3/tableSize.x;table.scale.setScalar(tableScale);
   table.position.set(-(tableBounds.min.x+tableBounds.max.x)/2*tableScale,-.12-tableBounds.max.y*tableScale,-(tableBounds.min.z+tableBounds.max.z)/2*tableScale);
   table.traverse(o=>{if(o.isMesh){o.receiveShadow=true;for(const m of [].concat(o.material)){m.roughness=Math.max(m.roughness??.8,.8);}}});bookScene.add(table);
-  const book=new THREE.Group();book.rotation.y=-.1;bookScene.add(book);
+  // The same case binding as the in-game menu, a third its size. Its open
+  // fold sits at the group's origin so the spread is centred where the old
+  // two-plane book was.
   const W=1.42,D=2.12;
-  const box=(w,h,d,color,x,y)=>{const m=new THREE.Mesh(new THREE.BoxGeometry(w,h,d),new THREE.MeshStandardMaterial({color,roughness:.8}));m.position.set(x,y,0);m.castShadow=true;book.add(m);return m;};
-  const leftBase=box(W+.09,.065,D+.12,'#3c2015',-W/2,-.08);
-  box(W+.09,.065,D+.12,'#3c2015',W/2,-.08);
-  const leftStack=box(W-.015,.075,D-.02,'#cbb999',-W/2,-.02);
-  box(W-.015,.075,D-.02,'#cbb999',W/2,-.02);
-  const pages=[];
-  for (const x of [-W/2,W/2]) {
-    const material=new THREE.MeshStandardMaterial({color:'#fff5df',roughness:1});
-    const mesh=new THREE.Mesh(new THREE.PlaneGeometry(W,D),material);mesh.rotation.x=-Math.PI/2;mesh.position.set(x,.022,0);book.add(mesh);pages.push(mesh);
-  }
-  const paper=new THREE.PlaneGeometry(W,D,40,8);paper.rotateX(-Math.PI/2);paper.translate(W/2,0,0);
-  const reverse=paper.clone();for(let i=0;i<reverse.attributes.uv.count;i++)reverse.attributes.uv.setX(i,1-reverse.attributes.uv.getX(i));
-  const moving=new THREE.Group();moving.position.y=.027;book.add(moving);
-  const fronts=[new THREE.MeshStandardMaterial({color:'#fff5df',roughness:1,side:THREE.FrontSide}),new THREE.MeshStandardMaterial({color:'#fff5df',roughness:1,side:THREE.BackSide})];
-  moving.add(new THREE.Mesh(paper,fronts[0]),new THREE.Mesh(reverse,fronts[1]));moving.children.forEach(m=>m.castShadow=true);
-  const cover=new THREE.Group();book.add(cover);
-  const coverGeo=new THREE.PlaneGeometry(W+.08,D+.1);coverGeo.rotateX(-Math.PI/2);coverGeo.translate(W/2,.085,0);
   const coverTexture=await loadTexture('/launcher/cover.png');
-  const coverMesh=new THREE.Mesh(coverGeo,new THREE.MeshStandardMaterial({map:coverTexture,roughness:.8,side:THREE.FrontSide}));coverMesh.castShadow=true;cover.add(coverMesh);
-  // The cover illustration belongs only to the outside. Its reverse is paper.
-  const coverLining=new THREE.Mesh(coverGeo,new THREE.MeshStandardMaterial({color:'#fff5df',roughness:1,side:THREE.BackSide}));
-  cover.add(coverLining);
+  const book=createStartupBook(THREE,{width:W,depth:D,coverTexture,RoundedBoxGeometry});
+  book.group.rotation.y=-.1;book.group.position.set(-book.geometry.openFoldX,-.12,0);bookScene.add(book.group);
+  const fronts=book.materials.slice(2);const pages=book.materials.slice(0,2);
   textures=await Promise.all(Array.from({length:8},(_,i)=>loadTexture(`/images/module-leaves/${i+1}.webp`)));
   for(const t of textures)renderer.initTexture(t);renderer.initTexture(coverTexture);
   await roomPromise;ready=true;document.body.classList.add('scene-ready');
@@ -150,9 +136,8 @@ async function createStudy() {
     const dt=Math.min((now-last)/1000,.05);last=now;
     const active=state!=='idle';
     if(active)opened=Math.min(1,opened+dt/(reduced?.15:1.6));
-    cover.rotation.z=smooth(opened)*Math.PI;cover.position.y=opened===1?-.1:0;
-    leftBase.visible=leftStack.visible=pages[0].visible=opened>.1;
-    moving.visible=active&&opened===1&&!reduced;
+    book.setOpen(smooth(opened));
+    book.sheet.visible=!reduced;
     let t=0;
     if(opened===1&&active){
       if(finishRequested&&!turning){finishLaunch();}else{
@@ -165,9 +150,9 @@ async function createStudy() {
       }
     }
     if(state==='leaving')t=frozenTurn;else lastTurnProgress=t;
-    const maps=[textures[spread%8],textures[(spread+(moving.visible?3:1))%8],textures[(spread+1)%8],textures[(spread+2)%8]];
-    [pages[0].material,pages[1].material,...fronts].forEach((m,i)=>{if(!m.map)m.needsUpdate=true;m.map=maps[i];});
-    for(const g of [paper,reverse])bendStartupLeaf(g,paper.attributes.uv,W,D,t);
+    const maps=[textures[spread%8],textures[(spread+(book.sheet.visible?3:1))%8],textures[(spread+1)%8],textures[(spread+2)%8]];
+    [...pages,...fronts].forEach((m,i)=>{if(!m.map)m.needsUpdate=true;m.map=maps[i];});
+    book.setTurn(Math.PI*turnEase(t));
     renderer.setViewport(0,0,innerWidth,innerHeight);renderer.clear();renderer.render(scene,bookCamera);
     requestAnimationFrame(frame);
   }
