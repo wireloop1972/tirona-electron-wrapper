@@ -67,3 +67,10 @@ graphics card takes up to a minute and older cards take longer, and one line
 below that shows the current step, the seconds elapsed (ticking) and the voice
 engine's latest output line. `verify:startup` asserts the hint, the line's
 shape and that the seconds tick.
+
+Uploaded to Steam App 4503860 on September 22, 2026, without setting a branch
+live: default/CUDA BuildID **25445559**, AMD/ROCm BuildID **25445643** (VDFs
+`app_build_book2.vdf` / `app_build_book2_amd.vdf` in the SDK scripts folder).
+Packaging ran `package:steam` end to end: 469 scene assets verified, startup
+renderer checks passed, packaged scene pack verified. Only the code depot
+carries a meaningful delta. The owner sets the builds live in Steamworks.
