@@ -23,6 +23,15 @@ app.whenReady().then(async()=>{
  await wait(1800);await capture('01-invitation');
  await win.webContents.executeJavaScript('document.querySelector("input[value=spoken]").checked=true;document.getElementById("begin").click()');
  await wait(2200);await capture('02-open-book');
+ // Perceived progress: the plain hint, a phase, and seconds that tick.
+ assert.equal(await win.webContents.executeJavaScript('document.getElementById("detail").textContent'),'A good graphics card takes up to a minute. Older cards take longer.');
+ win.webContents.send('startup:ttsProgress',{phase:'load',elapsedMs:2000});
+ win.webContents.send('startup:ttsLog',{line:'Loading model weights',elapsedMs:2100});
+ await wait(300);
+ const progressLine=await win.webContents.executeJavaScript('document.getElementById("progress").textContent');
+ assert.match(progressLine,/^Loading the voice model · \d+ s · Loading model weights$/,'Progress line must show phase, seconds and engine output');
+ await wait(1100);
+ assert.notEqual(await win.webContents.executeJavaScript('document.getElementById("progress").textContent'),progressLine,'Progress seconds must tick');
  await wait(2400);await capture('03-turning-page');
  win.webContents.send('startup:ttsResult',{success:false,reason:'Review test failure'});
  await wait(200);assert(await win.webContents.executeJavaScript('!document.getElementById("retry").hidden'));

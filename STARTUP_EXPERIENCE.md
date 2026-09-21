@@ -60,3 +60,10 @@ profile, with the curl lifting the free corner first; `node
 scripts/check-startup-leaf.cjs` verifies 1,001 poses against that profile.
 `npm run verify:startup` passed; screenshots under `release/startup-review/`.
 Not yet uploaded to Steam.
+
+September 21, later: testers who chose voice read the unchanging "Loading
+voice…" as a hang. Under it the window now says, in plain words, that a good
+graphics card takes up to a minute and older cards take longer, and one line
+below that shows the current step, the seconds elapsed (ticking) and the voice
+engine's latest output line. `verify:startup` asserts the hint, the line's
+shape and that the seconds tick.

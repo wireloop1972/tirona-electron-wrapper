@@ -16,6 +16,35 @@ const url = p => 'tirona-local://assets' + p;
 let settle = () => finishLaunch();
 const setStatus = (title, detail) => { el('status').textContent = title; el('detail').textContent = detail; };
 
+// While the voice loads, one line shows what is happening, how long it has
+// taken and the engine's latest output. Model load can take a minute on a
+// good GPU and longer on an old one; a status that never changes reads as a
+// hang, so the seconds tick and the engine's own lines scroll through.
+const VOICE_HINT = 'A good graphics card takes up to a minute. Older cards take longer.';
+const PHASES = {
+  gpu: 'Checking your graphics card',
+  spawn: 'Starting the voice engine',
+  load: 'Loading the voice model',
+  generate: 'Making the first line of speech',
+  play: 'Voice ready',
+};
+let voicePhase = 'gpu', voiceStartedAt = 0, voiceLine = '', voiceTimer = 0;
+const cleanLine = line => line.replace(/\x1b\[[0-9;]*m/g, '').replace(/^\s*\[?[\d:.T\-]+\]?\s*/, '').replace(/\s+/g, ' ').trim();
+function renderProgress() {
+  const seconds = Math.max(0, Math.round((performance.now() - voiceStartedAt) / 1000));
+  const parts = [PHASES[voicePhase] || 'Loading', `${seconds} s`];
+  if (voiceLine) parts.push(voiceLine);
+  el('progress').textContent = parts.join(' · ');
+}
+function startProgress() {
+  voicePhase = 'gpu'; voiceStartedAt = performance.now(); voiceLine = '';
+  clearInterval(voiceTimer); voiceTimer = setInterval(renderProgress, 1000); renderProgress();
+}
+function stopProgress(text) {
+  clearInterval(voiceTimer); voiceTimer = 0;
+  if (text !== undefined) el('progress').textContent = text;
+}
+
 async function finishLaunch() {
   if (state === 'leaving') return;
   frozenTurn = lastTurnProgress;
@@ -26,6 +55,7 @@ async function finishLaunch() {
 function requestFinish() {
   if (state === 'leaving') return;
   finishRequested = true; el('skip').disabled = true;
+  stopProgress('');
   setStatus('Loading…', '');
   if (!ready) settle();
 }
@@ -33,6 +63,7 @@ function fail(reason) {
   if (state === 'leaving') return;
   state = 'failed'; finishRequested = false; audio.pause();
   diagnostics.push(reason); el('skip').disabled = false;
+  stopProgress('');
   setStatus('Voice unavailable', 'Retry or continue without voice.');
   el('retry').hidden = false; el('diagnostics').hidden = false;
   el('skip').textContent = 'Continue without voice';
@@ -45,9 +76,10 @@ async function begin() {
   el('skip').textContent = 'Continue without voice'; el('skip').disabled = false;
   const voiced = supported && document.querySelector('input[value="spoken"]').checked;
   if (voiced) {
-    setStatus('Loading voice…', '');
+    setStatus('Loading voice…', VOICE_HINT);
+    startProgress();
     try { await api.beginTtsCheck(); } catch (e) { fail(String(e)); }
-  } else requestFinish();
+  } else { stopProgress(''); requestFinish(); }
 }
 el('begin').onclick = begin;
 el('retry').onclick = () => { document.querySelector('input[value="spoken"]').checked = true; begin(); };
@@ -58,16 +90,21 @@ el('skip').onclick = async () => {
 el('diagnostics').onclick = () => { api.copyDiagnostics(diagnostics.join('\n')); el('diagnostics').textContent = 'Copied'; };
 el('minimize').onclick = () => api.minimizeWindow();
 el('close').onclick = () => api.closeWindow();
-api.onLog(p => diagnostics.push(p.line));
+api.onLog(p => {
+  diagnostics.push(p.line);
+  if (state !== 'loading') return;
+  const line = cleanLine(p.line);
+  if (line) { voiceLine = line; renderProgress(); }
+});
 api.onProgress(p => {
   if (state !== 'loading') return;
-  const messages = {gpu:['Loading voice…',''],spawn:['Loading voice…',''],load:['Loading voice…',''],generate:['Loading voice…','']};
-  if (messages[p.phase]) setStatus(...messages[p.phase]);
+  if (PHASES[p.phase]) { voicePhase = p.phase; voiceLine = ''; renderProgress(); }
 });
 api.onResult(async result => {
   if (state !== 'loading') return;
   if (!result.success) { fail(result.reason); return; }
   state = 'playing'; setStatus('Voice ready', '');
+  stopProgress(`${PHASES.play} · ${Math.round((performance.now() - voiceStartedAt) / 1000)} s`);
   el('skip').textContent = 'Enter the game'; audio.src = result.audioDataUrl;
   try { await audio.play(); } catch { await api.cancelTtsCheck(); fail('Voice playback failed.'); }
 });
