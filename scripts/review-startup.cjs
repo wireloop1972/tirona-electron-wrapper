@@ -30,8 +30,9 @@ app.whenReady().then(async()=>{
  await wait(300);
  const progressLine=await win.webContents.executeJavaScript('document.getElementById("progress").textContent');
  assert.match(progressLine,/^Loading the voice model · \d+ s · Loading model weights$/,'Progress line must show phase, seconds and engine output');
- await wait(1100);
- assert.notEqual(await win.webContents.executeJavaScript('document.getElementById("progress").textContent'),progressLine,'Progress seconds must tick');
+ await wait(2600);
+ const secondsOf=line=>Number(/ (\d+) s /.exec(line)[1]);
+ assert(secondsOf(await win.webContents.executeJavaScript('document.getElementById("progress").textContent'))>secondsOf(progressLine),'Progress seconds must tick');
  await wait(2400);await capture('03-turning-page');
  win.webContents.send('startup:ttsResult',{success:false,reason:'Review test failure'});
  await wait(200);assert(await win.webContents.executeJavaScript('!document.getElementById("retry").hidden'));
