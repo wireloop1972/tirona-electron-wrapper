@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; style-src 'self'; font-src 'self' data:; connect-src tirona-local: blob:; img-src 'self' tirona-local: data: blob:; media-src data:;">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; style-src 'self'; font-src 'self' data:; connect-src tirona-local: blob:; img-src 'self' tirona-local: data: blob:; media-src 'self' data:;">
 <title>Tirona Rebirth</title>
 <link rel="stylesheet" href="startup-fonts.css">
 <link rel="stylesheet" href="startup-menu.css">
@@ -28,6 +28,7 @@
 <h2 id="status" role="status" aria-live="polite">Loading…</h2>
 <p id="detail"></p>
 <p id="progress" aria-live="off"></p>
+<fieldset id="narrators" hidden><legend>Choose a narrator <span>· click a voice to hear it</span></legend><div id="narrator-list"></div></fieldset>
 <div class="actions"><button id="skip" class="text-button">Continue without voice</button><button id="retry" class="text-button" hidden>Retry</button><button id="diagnostics" class="text-button" hidden>Copy diagnostics</button></div>
 </div>
 </section>

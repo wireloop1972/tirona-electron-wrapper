@@ -45,17 +45,69 @@ function stopProgress(text) {
   if (text !== undefined) el('progress').textContent = text;
 }
 
+// Narrator choice, offered under the loading copy while the voice loads. A
+// click chooses a voice and plays its sample; clicking the chosen voice again
+// replays or stops it. Main applies the choice to every narrator line.
+const sample = new Audio();
+let narrator = '', sampling = '', sampleToken = 0;
+function markSampling() {
+  for (const row of document.querySelectorAll('.narrator')) {
+    row.classList.toggle('playing', row.dataset.id === sampling);
+    if (row.dataset.id !== sampling) row.style.setProperty('--heard', 0);
+  }
+}
+function stopSample() { sampleToken++; sample.pause(); sampling = ''; markSampling(); }
+function playSample(id) {
+  if (sampling === id) { stopSample(); return; }
+  // A sample interrupts the voice test; "Enter the game" still launches.
+  if (state === 'playing') audio.pause();
+  const token = ++sampleToken;
+  sampling = id; sample.src = `../assets/narrators/${id}.mp3`; markSampling();
+  sample.play().catch(() => { if (token === sampleToken) stopSample(); });
+}
+function chooseNarrator(id) {
+  if (narrator !== id) { narrator = id; api.setNarrator(id); }
+  playSample(id);
+}
+sample.ontimeupdate = () => {
+  const row = document.querySelector(`.narrator[data-id="${sampling}"]`);
+  if (row && sample.duration) row.style.setProperty('--heard', sample.currentTime / sample.duration);
+};
+sample.onended = stopSample;
+sample.onerror = stopSample;
+function buildNarrators(list, chosen) {
+  narrator = chosen;
+  el('narrator-list').replaceChildren(...list.map(n => {
+    const row = document.createElement('label'); row.className = 'narrator'; row.dataset.id = n.id;
+    const input = document.createElement('input'); input.type = 'radio'; input.name = 'narrator'; input.checked = n.id === chosen;
+    input.onclick = () => chooseNarrator(n.id);
+    // Arrow keys may change the radio without a click.
+    input.onchange = () => { if (narrator !== n.id) chooseNarrator(n.id); };
+    const name = document.createElement('span'); name.className = 'name'; name.textContent = n.label;
+    const listen = document.createElement('span'); listen.className = 'listen'; listen.setAttribute('aria-hidden', 'true');
+    listen.append(...[0, 1, 2].map(() => document.createElement('i')));
+    row.append(input, name, listen);
+    return row;
+  }));
+}
+function showNarrators(on) {
+  const box = el('narrators');
+  if (!on) { stopSample(); box.classList.remove('shown'); box.hidden = true; return; }
+  if (el('narrator-list').children.length < 2) return;
+  box.hidden = false; void box.offsetWidth; box.classList.add('shown');
+}
+
 async function finishLaunch() {
   if (state === 'leaving') return;
   frozenTurn = lastTurnProgress;
-  state = 'leaving'; audio.pause(); document.body.classList.add('leaving');
+  state = 'leaving'; audio.pause(); stopSample(); document.body.classList.add('leaving');
   await new Promise(resolve => setTimeout(resolve, reduced ? 100 : 850));
   await api.launchGame();
 }
 function requestFinish() {
   if (state === 'leaving') return;
   finishRequested = true; el('skip').disabled = true;
-  stopProgress('');
+  stopProgress(''); showNarrators(false);
   setStatus('Loading…', '');
   if (!ready) settle();
 }
@@ -63,7 +115,7 @@ function fail(reason) {
   if (state === 'leaving') return;
   state = 'failed'; finishRequested = false; audio.pause();
   diagnostics.push(reason); el('skip').disabled = false;
-  stopProgress('');
+  stopProgress(''); showNarrators(false);
   setStatus('Voice unavailable', 'Retry or continue without voice.');
   el('retry').hidden = false; el('diagnostics').hidden = false;
   el('skip').textContent = 'Continue without voice';
@@ -77,7 +129,7 @@ async function begin() {
   const voiced = supported && document.querySelector('input[value="spoken"]').checked;
   if (voiced) {
     setStatus('Loading voice…', VOICE_HINT);
-    startProgress();
+    startProgress(); showNarrators(true);
     try { await api.beginTtsCheck(); } catch (e) { fail(String(e)); }
   } else { stopProgress(''); requestFinish(); }
 }
@@ -105,7 +157,7 @@ api.onResult(async result => {
   if (!result.success) { fail(result.reason); return; }
   state = 'playing'; setStatus('Voice ready', '');
   stopProgress(`${PHASES.play} · ${Math.round((performance.now() - voiceStartedAt) / 1000)} s`);
-  el('skip').textContent = 'Enter the game'; audio.src = result.audioDataUrl;
+  el('skip').textContent = 'Enter the game'; stopSample(); audio.src = result.audioDataUrl;
   try { await audio.play(); } catch { await api.cancelTtsCheck(); fail('Voice playback failed.'); }
 });
 audio.onended = () => { if (state === 'playing') { api.reportAudioFinished(audio.duration*1000); requestFinish(); } };
@@ -114,6 +166,7 @@ api.getInfo().then(info => {
   supported = info.ttsSupported;
   document.querySelector('input[value="spoken"]').disabled = !supported;
   el('availability').textContent = supported ? '' : 'Voice unavailable on this device.';
+  buildNarrators(info.narrators || [], info.narrator);
 }).catch(() => { el('availability').textContent = 'Voice unavailable.'; });
 
 async function createStudy() {

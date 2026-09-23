@@ -292,6 +292,20 @@ const getVoiceFiles = async (forceRefresh = false): Promise<string[]> => {
   return voiceFileCache;
 };
 
+// The narrator the player chose in the startup window; every 'narrator'
+// request from the game is performed by this voice file.
+let narratorVoice = FALLBACK_VOICE_STEM;
+
+export const setNarratorVoice = (stem: string): void => {
+  narratorVoice = stem;
+};
+
+/** Whether a voice file with this stem is installed on disk. */
+export const isVoiceInstalled = (stem: string): boolean =>
+  ['.wav', '.mp3'].some(ext =>
+    fs.existsSync(path.join(getServerDir(), 'voices', stem + ext))
+  );
+
 /**
  * Resolve a renderer-supplied voice name ('narrator', 'Bodin', 'Malineth', …)
  * to the exact predefined-voice filename the Chatterbox server expects
@@ -306,13 +320,19 @@ export const resolvePredefinedVoice = async (
 ): Promise<string | null> => {
   // Probe the cache without fallback so we can tell a genuine miss (e.g. a
   // voice file added since the cache was primed) from a deliberate fallback.
-  let match = matchVoiceFile(await getVoiceFiles(), requested, false);
+  let match = matchVoiceFile(
+    await getVoiceFiles(), requested, false, narratorVoice
+  );
   if (!match) {
-    match = matchVoiceFile(await getVoiceFiles(true), requested, false);
+    match = matchVoiceFile(
+      await getVoiceFiles(true), requested, false, narratorVoice
+    );
   }
   // Still nothing → narrator, then any available voice.
   if (!match) {
-    match = matchVoiceFile(await getVoiceFiles(), FALLBACK_VOICE_STEM, true);
+    match = matchVoiceFile(
+      await getVoiceFiles(), FALLBACK_VOICE_STEM, true, narratorVoice
+    );
   }
   return match;
 };

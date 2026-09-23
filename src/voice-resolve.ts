@@ -38,11 +38,16 @@ const isPlaceholder = (name: string): boolean => name === 'default';
  * stem exists as both .wav and .mp3, .wav wins. With `allowFallback = false`
  * a genuine miss returns `null` so callers can distinguish "not found" from
  * "fell back" (used to trigger a one-shot voice-list refresh).
+ *
+ * `narrator` is the voice the player chose in the startup window. Every
+ * narrator request, and every fallback, goes to it; if its file is missing
+ * the fallback still reaches the stock narrator.
  */
 export const matchVoiceFile = (
   files: string[],
   requested: string | undefined,
-  allowFallback = true
+  allowFallback = true,
+  narrator = FALLBACK_VOICE_STEM
 ): string | null => {
   const usable = files.filter(f => f && !isPlaceholder(f));
   if (usable.length === 0) return null;
@@ -56,10 +61,12 @@ export const matchVoiceFile = (
   };
 
   const trimmed = requested?.trim();
-  const want =
+  const asked =
     trimmed && trimmed.toLowerCase() !== 'default'
       ? trimmed
       : FALLBACK_VOICE_STEM;
+  const want =
+    voiceStem(asked).toLowerCase() === FALLBACK_VOICE_STEM ? narrator : asked;
 
   // 1. exact filename (covers a name that already carries an extension)
   const exact = usable.find(f => f.toLowerCase() === want.toLowerCase());
@@ -72,5 +79,5 @@ export const matchVoiceFile = (
   if (!allowFallback) return null;
 
   // 3. narrator, then 4. anything — never send a name the server will 404 on.
-  return byStem(FALLBACK_VOICE_STEM) ?? usable[0];
+  return byStem(narrator) ?? byStem(FALLBACK_VOICE_STEM) ?? usable[0];
 };

@@ -21,8 +21,11 @@ export type TtsResultPayload =
 
 contextBridge.exposeInMainWorld('startupAPI', {
   // Returns { gpu: { available, gpuName?, vramMB? }, backend, serverInstalled,
-  // ttsSupported }
+  // ttsSupported, narrators: [{ id, label }], narrator }
   getInfo: () => ipcRenderer.invoke('startup:get-info'),
+
+  // Chooses who performs the narrator's lines; remembered across launches.
+  setNarrator: (id: string) => ipcRenderer.invoke('startup:setNarrator', id),
 
   // Fire-and-forget: starts the orchestrated TTS bring-up + voice test.
   // Progress arrives via onProgress, the outcome via onResult.

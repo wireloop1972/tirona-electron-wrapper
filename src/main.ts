@@ -21,6 +21,8 @@ import {
   getBaseUrl,
   fetchVoices,
   resolvePredefinedVoice,
+  setNarratorVoice,
+  isVoiceInstalled,
   isServerInstalled,
   transcribeAudio,
   detectTtsCapability,
@@ -39,6 +41,12 @@ import {
   isStaticAssetPath,
   resolveStaticAsset,
 } from './asset-sync-manager';
+import {
+  NARRATORS,
+  DEFAULT_NARRATOR,
+  loadNarratorChoice,
+  saveNarratorChoice,
+} from './narrators';
 
 interface AppConfig {
   development: {
@@ -687,13 +695,28 @@ ipcMain.on('settings:open', () => {
 ipcMain.handle('startup:get-info', () => {
   const cap = detectTtsCapability();
   const serverInstalled = isServerInstalled();
+  const narrators = NARRATORS.filter(n => isVoiceInstalled(n.id));
+  const chosen = loadNarratorChoice();
   return {
     gpu: cap.gpu,
     backend: cap.backend,
     serverInstalled,
     ttsSupported:
       process.platform === 'win32' && cap.supported && serverInstalled,
+    narrators,
+    narrator: narrators.some(n => n.id === chosen) ? chosen : DEFAULT_NARRATOR,
   };
+});
+
+// The narrator picked while the voice loads. It performs every narrator line
+// from now on (the intro too, if it has not been generated yet) and is
+// remembered for the next launch.
+ipcMain.handle('startup:setNarrator', (_e, id: string) => {
+  if (!NARRATORS.some(n => n.id === id)) return { ok: false };
+  setNarratorVoice(id);
+  saveNarratorChoice(id);
+  console.log(`[Startup] Narrator voice: ${id}`);
+  return { ok: true };
 });
 
 const shortReason = (err: unknown): string => {
@@ -756,8 +779,8 @@ const runTtsCheck = async (): Promise<void> => {
     if (abort.signal.aborted) throw new Error('cancelled');
 
     progress('generate');
-    // Warm up + audibly test with the narrator voice specifically, so swapping
-    // the Narrator voice file later automatically changes what the test plays.
+    // Warm up + audibly test with the narrator voice specifically: it resolves
+    // to the narrator the player has chosen so far.
     const intro = await generateNarratorIntro('narrator', abort.signal);
     if (abort.signal.aborted) throw new Error('cancelled');
     if (!intro.audioDataUrl) {
@@ -1340,6 +1363,13 @@ app.whenReady().then(async () => {
   console.log(`  Server installed: ${installed}`);
   console.log(`  TTS available: ${ttsAvailable}`);
   console.log('==================');
+
+  // The narrator chosen at an earlier launch performs until the player picks
+  // another in the startup window.
+  const savedNarrator = loadNarratorChoice();
+  setNarratorVoice(
+    isVoiceInstalled(savedNarrator) ? savedNarrator : DEFAULT_NARRATOR
+  );
 
   if (process.env.TTS_TEST === 'true') {
     // The test harness skips the startup dialog, so grant TTS explicitly or

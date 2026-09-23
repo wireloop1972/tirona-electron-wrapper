@@ -82,3 +82,14 @@ live: default/CUDA BuildID **25476911**, AMD/ROCm BuildID **25477073** (VDFs
 since September 22 (pack 424d59f5, 680 required assets), so the assets and
 static depots carry no new content. The first AMD attempt failed with a Steam
 transport timeout on depot 4503863; the retry succeeded.
+
+September 23: while the voice loads, a narrator choice sits under the loading
+copy: British, American and young voices, male and female (six in all). A click
+chooses a voice and plays its sample from `assets/narrators/<id>.mp3`; clicking
+it again replays or stops it. Main remaps every `narrator` request (and every
+fallback) to the chosen voice file, so the game needs no change, and the choice
+is kept in `%APPDATA%\Tirona\narrator.json`. The roster is `src/narrators.ts`,
+and a voice whose file is missing from `tts-server/voices` is not offered. The
+five new takes are levelled to -18 LUFS / -2 dBTP and installed in all five voice
+folders. `verify:startup` checks the choice, the sample and the compact layout.
+Not yet uploaded to Steam: this needs both the code depot and the TTS depot.

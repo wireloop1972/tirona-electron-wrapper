@@ -3,8 +3,10 @@ const path=require('path');
 const fs=require('fs');
 const {registerStartupAssets}=require('../dist/startup-assets');
 const assert=require('assert/strict');
-let launched=0,ttsSupported=true;
-ipcMain.handle('startup:get-info',()=>({ttsSupported}));
+let launched=0,ttsSupported=true,chosenNarrator=null;
+const narrators=[['Narrator','British male'],['BritishFemaleNarrator','British female'],['AmericanMaleNarrator','American male'],['AmericanFemaleNarrator','American female'],['YoungMaleNarrator','Young male'],['YoungFemaleNarrator','Young female']].map(([id,label])=>({id,label}));
+ipcMain.handle('startup:get-info',()=>({ttsSupported,narrators,narrator:'Narrator'}));
+ipcMain.handle('startup:setNarrator',(_e,id)=>{chosenNarrator=id;return {ok:true};});
 ipcMain.handle('startup:beginTtsCheck',()=>({ok:true}));
 ipcMain.handle('startup:cancelTtsCheck',()=>({ok:true}));
 ipcMain.handle('startup:reportAudioFinished',()=>({ok:true}));
@@ -33,9 +35,19 @@ app.whenReady().then(async()=>{
  await wait(2600);
  const secondsOf=line=>Number(/ (\d+) s /.exec(line)[1]);
  assert(secondsOf(await win.webContents.executeJavaScript('document.getElementById("progress").textContent'))>secondsOf(progressLine),'Progress seconds must tick');
- await wait(2400);await capture('03-turning-page');
+ // The narrator choice sits under the loading copy; a click chooses a voice and plays its sample.
+ const js=code=>win.webContents.executeJavaScript(code,true);
+ assert(await js('!document.getElementById("narrators").hidden&&document.querySelectorAll(".narrator").length===6'),'Narrator choice must show during voice load');
+ assert(await js('document.querySelector(".narrator[data-id=Narrator] input").checked'),'The remembered narrator must start chosen');
+ await js('document.querySelector(".narrator[data-id=AmericanFemaleNarrator]").click()');
+ await wait(2400);
+ assert.equal(chosenNarrator,'AmericanFemaleNarrator','Clicking a narrator must choose it');
+ assert(await js('document.querySelector(".narrator[data-id=AmericanFemaleNarrator]").classList.contains("playing")'),'Clicking a narrator must play its sample');
+ assert(Number(await js('document.querySelector(".narrator[data-id=AmericanFemaleNarrator]").style.getPropertyValue("--heard")'))>0,'Sample progress must advance');
+ await capture('03-turning-page');
  win.webContents.send('startup:ttsResult',{success:false,reason:'Review test failure'});
  await wait(200);assert(await win.webContents.executeJavaScript('!document.getElementById("retry").hidden'));
+ assert(await js('document.getElementById("narrators").hidden&&!document.querySelector(".narrator.playing")'),'Voice failure must put the narrator choice away and stop its sample');
  await capture('04-voice-unavailable');
  await win.webContents.executeJavaScript('document.getElementById("skip").click()');
  for(let n=0;n<30&&!launched;n++)await wait(250);
@@ -50,15 +62,22 @@ app.whenReady().then(async()=>{
  await capture('05-ready-during-turn');
  for(let n=0;n<32&&!launched;n++)await wait(250);
  assert.equal(launched,1,'Voice success failed to launch');
+ // The narrator choice must fit under the loading copy in a compact window.
+ win.setSize(900,600);await win.loadFile(path.resolve('src/startup-menu.html'));await wait(2500);
+ await js('document.querySelector("input[value=spoken]").checked=true;document.getElementById("begin").click()');
+ await wait(1500);
+ assert(await js('!document.getElementById("narrators").hidden'),'Narrator choice must show in a compact window');
+ assert(await js('document.getElementById("skip").getBoundingClientRect().bottom < innerHeight-20'),'Loading actions fall below compact window');
+ await capture('06-compact-narrators');
  // Compact window and unsupported voice must keep the primary action accessible.
  ttsSupported=false;win.setSize(900,600);await win.loadFile(path.resolve('src/startup-menu.html'));await wait(2500);launched=0;
  assert(await win.webContents.executeJavaScript('document.querySelector("input[value=spoken]").disabled'));
  const fits=await win.webContents.executeJavaScript('document.getElementById("begin").getBoundingClientRect().bottom < innerHeight-30');
- assert(fits,'Begin falls below compact window');await capture('06-compact');
+ assert(fits,'Begin falls below compact window');await capture('07-compact');
  await win.webContents.executeJavaScript('document.getElementById("begin").click()');
  for(let n=0;n<24&&!launched;n++)await wait(250);
  assert.equal(launched,1);
  assert.deepEqual(errors,[]);
- console.log('PASS: local 3D room, book opening/turning, voice failure and written-narration recovery; no renderer errors.');
+ console.log('PASS: local 3D room, book opening/turning, narrator choice and samples, voice failure and written-narration recovery; no renderer errors.');
  app.exit(0);
 }).catch(e=>{console.error(e);app.exit(1);});
