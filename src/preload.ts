@@ -89,6 +89,8 @@ contextBridge.exposeInMainWorld('electron', {
     setSize: (width: number, height: number) =>
       ipcRenderer.send('window:setSize', width, height),
     getSize: () => ipcRenderer.invoke('window:getSize'),
+    /** JPEG bytes of the whole window, for beta feedback screenshots. */
+    capture: () => ipcRenderer.invoke('window:capture'),
   },
 
   openSettings: () => ipcRenderer.send('settings:open'),

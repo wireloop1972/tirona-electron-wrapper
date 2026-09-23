@@ -660,6 +660,16 @@ ipcMain.on('window:setSize', (_e, w: number, h: number) => {
   }
 });
 
+// Beta feedback screenshots: the exact window, HTML panels and 3D scene alike
+// (the page can only rasterise its own canvases and HTML). JPEG, at most
+// 1600px wide, so the upload stays small.
+ipcMain.handle('window:capture', async () => {
+  if (!mainWindow || mainWindow.isDestroyed()) return null;
+  const image = await mainWindow.webContents.capturePage();
+  const scaled = image.getSize().width > 1600 ? image.resize({ width: 1600, quality: 'good' }) : image;
+  return scaled.toJPEG(85);
+});
+
 ipcMain.handle('window:getSize', () => {
   if (mainWindow && !mainWindow.isDestroyed()) {
     const [width, height] = mainWindow.getSize();
