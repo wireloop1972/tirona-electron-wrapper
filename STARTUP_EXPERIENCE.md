@@ -74,3 +74,11 @@ live: default/CUDA BuildID **25445559**, AMD/ROCm BuildID **25445643** (VDFs
 Packaging ran `package:steam` end to end: 469 scene assets verified, startup
 renderer checks passed, packaged scene pack verified. Only the code depot
 carries a meaningful delta. The owner sets the builds live in Steamworks.
+
+Uploaded to Steam App 4503860 on September 23, 2026, without setting a branch
+live: default/CUDA BuildID **25476911**, AMD/ROCm BuildID **25477073** (VDFs
+`app_build_feedback.vdf` / `app_build_feedback_amd.vdf`). The code depot adds
+`window:capture` for beta feedback screenshots. The Blob manifest was unchanged
+since September 22 (pack 424d59f5, 680 required assets), so the assets and
+static depots carry no new content. The first AMD attempt failed with a Steam
+transport timeout on depot 4503863; the retry succeeded.
