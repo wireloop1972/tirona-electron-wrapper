@@ -92,4 +92,15 @@ is kept in `%APPDATA%\Tirona\narrator.json`. The roster is `src/narrators.ts`,
 and a voice whose file is missing from `tts-server/voices` is not offered. The
 five new takes are levelled to -18 LUFS / -2 dBTP and installed in all five voice
 folders. `verify:startup` checks the choice, the sample and the compact layout.
-Not yet uploaded to Steam: this needs both the code depot and the TTS depot.
+
+Uploaded to Steam App 4503860 on September 23, 2026, without setting a branch
+live: default/CUDA BuildID **25477852**, AMD/ROCm BuildID **25477920** (VDFs
+`app_build_narrators.vdf` / `app_build_narrators_amd.vdf`). Packaging ran
+`package:steam` end to end: 469 scene assets verified, startup renderer checks
+passed (including the narrator choice), packaged scene pack verified. The code
+depot carries the picker and its samples; both TTS depots carry the five new
+voices. Shared manifests: code **6794619529775231182**, assets
+**7040493070060296048**, static **8345576566869889997**; TTS CUDA
+**6940562104205002231**, TTS ROCm **3635431021126538150**. The Blob manifest was
+unchanged (pack 424d59f5, 680 required assets). The owner sets the builds live
+in Steamworks.
