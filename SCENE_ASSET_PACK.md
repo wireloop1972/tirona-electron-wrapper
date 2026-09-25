@@ -31,3 +31,15 @@ inventory SHA-256 and explicitly test missing-file behavior.
 Release code depot 4503861, assets depot 4503862 and static depot 4503864 together.
 Only then deploy the matching Battlemap web manifest/redirect changes. Building a
 package does not upload or activate a Steam release.
+
+Uploaded to Steam App 4503860 on September 25, 2026, without setting a branch
+live: default/CUDA BuildID **25531202**, AMD/ROCm BuildID **25531334** (VDFs
+`app_build_premiumminis.vdf` / `app_build_premiumminis_amd.vdf`). The asset pack
+adds the 42 premium player miniatures (Battlemap 83199b52: GLB + preview each,
+84 scene entries). `package:steam` ran end to end: 555 scene assets
+(1,353,353,208 bytes) verified before and after packaging, startup checks passed.
+Only the assets depot changed: **6997008876464263611** (344 files added, 207 MB).
+Code **6794619529775231182**, static **8345576566869889997** and TTS CUDA
+**6940562104205002231** were reused; TTS ROCm re-uploaded unchanged content as
+**6966641965853334645** (21 chunks). Pack version 1f12edc80f05b369, 766 required
+assets. The owner sets the builds live in Steamworks.
