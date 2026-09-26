@@ -229,6 +229,18 @@ const main = async () => {
   }
 
   const toDownload = [...byId.values()];
+
+  // The intro film is streamed on the web but must play offline on Steam, so the pack always
+  // carries the film the game plays. Its id comes from the game source, the single source of
+  // truth (not a required web asset: web players stream it only when it plays).
+  const cutsceneSource = fs.readFileSync(path.join(BATTLEMAP_DIR, 'components/game/IntroCutscene.tsx'), 'utf8');
+  const cutsceneId = cutsceneSource.match(/CUTSCENE_ASSET_ID = '([^']+)'/)?.[1];
+  if (!cutsceneId) throw new Error('Intro film id (CUTSCENE_ASSET_ID) not found in IntroCutscene.tsx');
+  const film = manifest.assets.find((a) => a.id === cutsceneId);
+  if (!film) throw new Error(`Intro film absent from the manifest: ${cutsceneId}`);
+  if (!toDownload.some((a) => a.id === cutsceneId)) toDownload.push(film);
+  console.log(`  Intro film : ${cutsceneId} (${formatBytes(film.size)})`);
+
   if (deduped.length > 0) {
     console.log(`  Deduped ${deduped.length} duplicate id(s) in the manifest:`);
     for (const d of deduped) console.log(`    - ${d}`);

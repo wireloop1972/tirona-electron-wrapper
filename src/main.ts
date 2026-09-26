@@ -35,6 +35,8 @@ import {
   getStaticPackPath,
   loadBundledManifest,
   buildBlobLookup,
+  isPackagedMedia,
+  servePackagedMedia,
   buildSceneLookup,
   serveSceneAsset,
   getMimeType,
@@ -1179,6 +1181,8 @@ const registerAssetInterceptor = (): void => {
 
         if (localPath && fs.existsSync(localPath)) {
           console.log(`[Interceptor] Blob hit: ${blobPathname}`);
+          // Video/audio (the intro film) streams with byte ranges; everything else unchanged.
+          if (isPackagedMedia(localPath)) return servePackagedMedia(request, localPath);
           const data = fs.readFileSync(localPath);
           return new Response(data, {
             status: 200,

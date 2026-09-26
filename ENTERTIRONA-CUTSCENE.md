@@ -1,4 +1,10 @@
 # Character-Entry Cutscene (ENTERTIRONA.mp4) — Setup Runbook
+> **Current state (2026-09-26):** the game plays `assets/cutscenes/ENTERTIRONA-3.mp4`
+> and the Steam pack bundles it automatically: `scripts/download-asset-pack.ts` reads
+> `CUTSCENE_ASSET_ID` from Battlemap `components/game/IntroCutscene.tsx`, and the
+> interceptor streams packaged video with byte ranges. The steps below are the original
+> runbook; Option B is what is now implemented. See SCENE_ASSET_PACK.md for the upload.
+
 
 How the "new character enters the game" cutscene is compressed, delivered to
 Steam, and played by the web game so it streams from the **local Steam install**

@@ -43,3 +43,18 @@ Code **6794619529775231182**, static **8345576566869889997** and TTS CUDA
 **6940562104205002231** were reused; TTS ROCm re-uploaded unchanged content as
 **6966641965853334645** (21 chunks). Pack version 1f12edc80f05b369, 766 required
 assets. The owner sets the builds live in Steamworks.
+
+Uploaded to Steam App 4503860 on September 26, 2026, without setting a branch
+live: default/CUDA BuildID **25544596**, AMD/ROCm BuildID **25544649** (VDFs
+`app_build_introfilm.vdf` / `app_build_introfilm_amd.vdf`). The asset pack now
+bundles the intro film `assets/cutscenes/ENTERTIRONA-3.mp4` (241,481,210 bytes,
+SHA-256 92935ba4…) so it plays offline; `download-asset-pack.ts` reads the film id
+from Battlemap `components/game/IntroCutscene.tsx` (`CUTSCENE_ASSET_ID`). Packaged
+video/audio is served with HTTP byte ranges (`servePackagedMedia`); GLBs and other
+assets are served exactly as before. `package:steam` now also runs
+`verify:intro-film` / `verify:packaged-intro-film` (the film plays and seeks in an
+offline Electron window). Code **3740570716572669870** and assets
+**4124457343893932669** (2 files added, 230 MB) are new; TTS CUDA
+**6940562104205002231** and static **8345576566869889997** were reused; TTS ROCm
+re-uploaded unchanged content as **6994371129280619877**. Pack version
+06304875b85df98e. The owner sets the builds live in Steamworks.

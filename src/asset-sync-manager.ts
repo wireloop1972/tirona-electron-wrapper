@@ -1,6 +1,7 @@
 import { app } from 'electron';
 import * as path from 'path';
 import * as fs from 'fs';
+import { Readable } from 'stream';
 
 /**
  * Asset Pack Manager for Steam/Electron builds.
@@ -151,6 +152,34 @@ export const serveSceneAsset = (url: string, appUrl: string, lookup: Map<string,
   return new Response(fs.readFileSync(file), { status: 200,
     headers: { 'Content-Type': getMimeType(file), 'X-Tirona-Asset-Source': 'steam' } });
 };
+
+/**
+ * Serve a packaged video (the intro film) the way a <video> element expects: honour its
+ * Range requests with 206 slices streamed from disk, instead of reading the whole file
+ * (240 MB) into memory on every request and ignoring the range.
+ */
+export const servePackagedMedia = (request: Request, file: string): Response => {
+  const size = fs.statSync(file).size;
+  const type = getMimeType(file);
+  const range = (request.headers.get('range') ?? '').match(/^bytes=(\d*)-(\d*)$/);
+  const stream = (start: number, end: number) =>
+    Readable.toWeb(fs.createReadStream(file, { start, end })) as unknown as ReadableStream<Uint8Array>;
+  if (!range || (range[1] === '' && range[2] === '')) {
+    return new Response(stream(0, size - 1), { status: 200,
+      headers: { 'Content-Type': type, 'Content-Length': String(size), 'Accept-Ranges': 'bytes' } });
+  }
+  // "bytes=N-" to the end, "bytes=-N" the last N bytes, "bytes=A-B" inclusive
+  const start = range[1] === '' ? Math.max(0, size - Number(range[2])) : Number(range[1]);
+  const end = range[1] === '' || range[2] === '' ? size - 1 : Math.min(Number(range[2]), size - 1);
+  if (start >= size || start > end) {
+    return new Response(null, { status: 416, headers: { 'Content-Range': `bytes */${size}` } });
+  }
+  return new Response(stream(start, end), { status: 206,
+    headers: { 'Content-Type': type, 'Content-Length': String(end - start + 1), 'Accept-Ranges': 'bytes',
+      'Content-Range': `bytes ${start}-${end}/${size}` } });
+};
+
+export const isPackagedMedia = (file: string): boolean => /^(video|audio)\//.test(getMimeType(file));
 
 /**
  * Quick validation: check that the manifest exists and a sample of
